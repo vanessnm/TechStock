@@ -1,0 +1,1 @@
+console.log("TechStock Javascript fonctionne !");
