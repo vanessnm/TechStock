@@ -7,8 +7,32 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <h1>TechStock</h1>
-    <p>Application de gestion d'inventaire</p>
+    <main class="connexion">
+        <h1>TechStock</h1>
+        <p>Gestion du parc informatique</p>
+
+        <form id="formConnexion">
+            <label for="email">Adresse courriel</label>
+            <input
+                type="email"
+                id="email"
+                name="email"
+                required
+            >
+
+            <label for="motDePasse">Mot de passe</label>
+            <input
+                type="password"
+                id="motDePasse"
+                name="motDePasse"
+                required
+            >
+
+            <button type="submit">Se connecter</button>
+
+            <p id="messageConnexion"></p>
+        </form>
+    </main>
 
     <script src="script.js"></script>
 </body>

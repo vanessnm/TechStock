@@ -1,17 +1,91 @@
 const express = require('express');
 const path = require('path');
+const bcrypt = require('bcrypt');
+const session = require('express-session');
 
 const { connecterBD } = require('./src/db');
 
 const app = express();
 
 app.use(express.json());
+app.use(session({
+    secret: process.env.SESSION_SECRET,
+    resave: false,
+    saveUninitialized: false
+}));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 connecterBD();
 
-app.get('/api/equipements', async (req, res) => {
+app.post('/api/connexion', async (req, res) => {
+    try {
+        const { email, mot_de_passe } = req.body;
+
+        const pool = await connecterBD();
+
+        const resultat = await pool.request()
+            .input('email', email)
+            .query(`
+                SELECT *
+                FROM Utilisateurs
+                WHERE email = @email
+                  AND actif = 1
+            `);
+
+       if (resultat.recordset.length === 0) {
+    return res.status(401).json({
+        erreur: 'Email ou mot de passe incorrect'
+    });
+}
+
+const utilisateur = resultat.recordset[0];
+
+const motDePasseValide = await bcrypt.compare(
+    mot_de_passe,
+    utilisateur.mot_de_passe
+);
+
+if (!motDePasseValide) {
+    return res.status(401).json({
+        erreur: 'Email ou mot de passe incorrect'
+    });
+}
+
+req.session.utilisateur = {
+    id: utilisateur.id,
+    nom: utilisateur.nom,
+    email: utilisateur.email,
+    role: utilisateur.role
+};
+
+res.json({
+    message: 'Connexion réussie',
+    utilisateur: {
+        id: utilisateur.id,
+        nom: utilisateur.nom,
+        email: utilisateur.email,
+        role: utilisateur.role
+    }
+});
+
+    } catch (erreur) {
+        console.error(erreur);
+
+        res.status(500).json({
+            erreur: 'Erreur lors de la connexion'
+        });
+    }
+});
+
+
+app.get('/api/session', (req, res) => {
+    res.json({
+        utilisateur: req.session.utilisateur || null
+    });
+});
+
+app.get('/api/equipements', async (req, res) => { 
     try {
         const pool = await connecterBD();
 
