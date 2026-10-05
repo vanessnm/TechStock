@@ -255,6 +255,7 @@ app.post('/api/equipements', verifierConnexion, async (req, res) => {
 });
 
 // VALIDER UN ÉQUIPEMENT AJOUTÉ PAR UN EMPLOYÉ
+
 app.put(
     '/api/equipements/:id/validation',
     verifierConnexion,
@@ -283,6 +284,28 @@ app.put(
                     erreur: 'Équipement en attente de validation introuvable'
                 });
             }
+
+            await pool.request()
+                .input('equipement_id', id)
+                .input('utilisateur_id', req.session.utilisateur.id)
+                .input('type_mouvement', 'Validation')
+                .input('note', 'Équipement validé par un administrateur')
+                .query(`
+                    INSERT INTO Mouvements
+                    (
+                        equipement_id,
+                        utilisateur_id,
+                        type_mouvement,
+                        note
+                    )
+                    VALUES
+                    (
+                        @equipement_id,
+                        @utilisateur_id,
+                        @type_mouvement,
+                        @note
+                    )
+                `);
 
             res.json({
                 message: 'Équipement validé avec succès'
