@@ -321,6 +321,142 @@ app.put(
     }
 );
 
+// SIGNALER LE RETOUR D'UN ÉQUIPEMENT
+
+app.put(
+    '/api/equipements/:id/retour',
+    verifierConnexion,
+    async (req, res) => {
+        try {
+            const { id } = req.params;
+
+            const pool = await connecterBD();
+
+            // L'employé peut seulement signaler le retour
+            // d'un équipement qui lui est actuellement attribué
+            const resultat = await pool.request()
+                .input('id', id)
+                .input('utilisateur_id', req.session.utilisateur.id)
+                .query(`
+                    UPDATE Equipements
+                    SET etat = 'En attente de retour'
+                    WHERE id = @id
+                      AND etat = 'Attribué'
+                      AND attribue_a_id = @utilisateur_id
+                `);
+
+            if (resultat.rowsAffected[0] === 0) {
+                return res.status(404).json({
+                    erreur: 'Équipement attribué à cet employé introuvable'
+                });
+            }
+
+            // Enregistre le signalement dans l'historique
+            await pool.request()
+                .input('equipement_id', id)
+                .input('utilisateur_id', req.session.utilisateur.id)
+                .input('type_mouvement', 'Retour signalé')
+                .input('note', 'Retour de l’équipement signalé par l’employé')
+                .query(`
+                    INSERT INTO Mouvements
+                    (
+                        equipement_id,
+                        utilisateur_id,
+                        type_mouvement,
+                        note
+                    )
+                    VALUES
+                    (
+                        @equipement_id,
+                        @utilisateur_id,
+                        @type_mouvement,
+                        @note
+                    )
+                `);
+
+            res.json({
+                message: 'Retour signalé avec succès'
+            });
+
+        } catch (erreur) {
+            console.error(erreur);
+
+            res.status(500).json({
+                erreur: 'Impossible de signaler le retour'
+            });
+        }
+    }
+);
+
+// CONFIRMER LE RETOUR D'UN ÉQUIPEMENT
+
+app.put(
+    '/api/equipements/:id/retour/confirmation',
+    verifierConnexion,
+    verifierAdmin,
+    async (req, res) => {
+        try {
+            const { id } = req.params;
+
+            const pool = await connecterBD();
+
+            // Confirme uniquement un retour déjà signalé
+            const resultat = await pool.request()
+                .input('id', id)
+                .query(`
+                    UPDATE Equipements
+                    SET
+                        etat = 'Disponible',
+                        attribue_a_id = NULL,
+                        date_attribution = NULL
+                    WHERE id = @id
+                      AND etat = 'En attente de retour'
+                `);
+
+            if (resultat.rowsAffected[0] === 0) {
+                return res.status(404).json({
+                    erreur: 'Équipement en attente de retour introuvable'
+                });
+            }
+
+            // Enregistre la confirmation dans l'historique
+            await pool.request()
+                .input('equipement_id', id)
+                .input('utilisateur_id', req.session.utilisateur.id)
+                .input('type_mouvement', 'Retour confirmé')
+                .input('note', 'Retour de l’équipement confirmé par un administrateur')
+                .query(`
+                    INSERT INTO Mouvements
+                    (
+                        equipement_id,
+                        utilisateur_id,
+                        type_mouvement,
+                        note
+                    )
+                    VALUES
+                    (
+                        @equipement_id,
+                        @utilisateur_id,
+                        @type_mouvement,
+                        @note
+                    )
+                `);
+
+            res.json({
+                message: 'Retour confirmé avec succès'
+            });
+
+        } catch (erreur) {
+            console.error(erreur);
+
+            res.status(500).json({
+                erreur: 'Impossible de confirmer le retour'
+            });
+        }
+    }
+);
+
+
 
 // MODIFIER UN ÉQUIPEMENT
 app.put('/api/equipements/:id', verifierConnexion, async (req, res) => {
@@ -386,6 +522,95 @@ app.put('/api/equipements/:id', verifierConnexion, async (req, res) => {
     }
 });
 
+// ATTRIBUER UN ÉQUIPEMENT À UN EMPLOYÉ
+
+app.put(
+    '/api/equipements/:id/attribution',
+    verifierConnexion,
+    verifierAdmin,
+    async (req, res) => {
+        try {
+            const { id } = req.params;
+            const { utilisateur_id } = req.body;
+
+            const pool = await connecterBD();
+
+            // Vérifie que l'employé existe et que son compte est actif
+            const employe = await pool.request()
+                .input('utilisateur_id', utilisateur_id)
+                .query(`
+                    SELECT id
+                    FROM Utilisateurs
+                    WHERE id = @utilisateur_id
+                      AND role = 'Employé'
+                      AND actif = 1
+                `);
+
+            if (employe.recordset.length === 0) {
+                return res.status(404).json({
+                    erreur: 'Employé actif introuvable'
+                });
+            }
+
+            // Attribue uniquement un équipement actuellement disponible
+            const resultat = await pool.request()
+                .input('id', id)
+                .input('utilisateur_id', utilisateur_id)
+                .query(`
+                    UPDATE Equipements
+                    SET
+                        etat = 'Attribué',
+                        attribue_a_id = @utilisateur_id,
+                        date_attribution = GETDATE()
+                    WHERE id = @id
+                      AND etat = 'Disponible'
+                `);
+
+            if (resultat.rowsAffected[0] === 0) {
+                return res.status(404).json({
+                    erreur: 'Équipement disponible introuvable'
+                });
+            }
+
+            // Enregistre l'attribution dans l'historique
+            await pool.request()
+                .input('equipement_id', id)
+                .input('utilisateur_id', req.session.utilisateur.id)
+                .input('type_mouvement', 'Attribution')
+                .input(
+                    'note',
+                    `Équipement attribué à l'utilisateur ${utilisateur_id}`
+                )
+                .query(`
+                    INSERT INTO Mouvements
+                    (
+                        equipement_id,
+                        utilisateur_id,
+                        type_mouvement,
+                        note
+                    )
+                    VALUES
+                    (
+                        @equipement_id,
+                        @utilisateur_id,
+                        @type_mouvement,
+                        @note
+                    )
+                `);
+
+            res.json({
+                message: 'Équipement attribué avec succès'
+            });
+
+        } catch (erreur) {
+            console.error(erreur);
+
+            res.status(500).json({
+                erreur: 'Impossible d’attribuer l’équipement'
+            });
+        }
+    }
+);
 
 // SUPPRIMER UN ÉQUIPEMENT
 // Cette route sera remplacée plus tard par la logique
