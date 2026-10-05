@@ -254,6 +254,50 @@ app.post('/api/equipements', verifierConnexion, async (req, res) => {
     }
 });
 
+// VALIDER UN ÉQUIPEMENT AJOUTÉ PAR UN EMPLOYÉ
+app.put(
+    '/api/equipements/:id/validation',
+    verifierConnexion,
+    verifierAdmin,
+    async (req, res) => {
+        try {
+            const { id } = req.params;
+
+            const pool = await connecterBD();
+
+            const resultat = await pool.request()
+                .input('id', id)
+                .input('valide_par_id', req.session.utilisateur.id)
+                .query(`
+                    UPDATE Equipements
+                    SET
+                        etat = 'Disponible',
+                        valide_par_id = @valide_par_id,
+                        date_validation = GETDATE()
+                    WHERE id = @id
+                      AND etat = 'En attente de validation'
+                `);
+
+            if (resultat.rowsAffected[0] === 0) {
+                return res.status(404).json({
+                    erreur: 'Équipement en attente de validation introuvable'
+                });
+            }
+
+            res.json({
+                message: 'Équipement validé avec succès'
+            });
+
+        } catch (erreur) {
+            console.error(erreur);
+
+            res.status(500).json({
+                erreur: 'Impossible de valider l’équipement'
+            });
+        }
+    }
+);
+
 
 // MODIFIER UN ÉQUIPEMENT
 app.put('/api/equipements/:id', verifierConnexion, async (req, res) => {
