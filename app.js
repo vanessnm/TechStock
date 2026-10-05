@@ -456,6 +456,154 @@ app.put(
     }
 );
 
+// METTRE UN ÉQUIPEMENT EN RÉPARATION
+
+app.put(
+    '/api/equipements/:id/reparation',
+    verifierConnexion,
+    async (req, res) => {
+        try {
+            const { id } = req.params;
+            const { raison } = req.body;
+
+            // La raison du problème est obligatoire
+            if (!raison || raison.trim() === '') {
+                return res.status(400).json({
+                    erreur: 'La raison de la réparation est obligatoire'
+                });
+            }
+
+            const pool = await connecterBD();
+
+            const resultat = await pool.request()
+                .input('id', id)
+                .query(`
+                    UPDATE Equipements
+                    SET etat = 'En réparation'
+                    WHERE id = @id
+                      AND etat NOT IN (
+                          'En attente de validation',
+                          'En attente de retour',
+                          'À remplacer / Hors service',
+                          'Perdu / Volé'
+                      )
+                `);
+
+            if (resultat.rowsAffected[0] === 0) {
+                return res.status(404).json({
+                    erreur: 'Équipement pouvant être mis en réparation introuvable'
+                });
+            }
+
+            // Enregistre la mise en réparation dans l'historique
+            await pool.request()
+                .input('equipement_id', id)
+                .input('utilisateur_id', req.session.utilisateur.id)
+                .input('type_mouvement', 'Mise en réparation')
+                .input('note', raison.trim())
+                .query(`
+                    INSERT INTO Mouvements
+                    (
+                        equipement_id,
+                        utilisateur_id,
+                        type_mouvement,
+                        note
+                    )
+                    VALUES
+                    (
+                        @equipement_id,
+                        @utilisateur_id,
+                        @type_mouvement,
+                        @note
+                    )
+                `);
+
+            res.json({
+                message: 'Équipement mis en réparation avec succès'
+            });
+
+        } catch (erreur) {
+            console.error(erreur);
+
+            res.status(500).json({
+                erreur: 'Impossible de mettre l’équipement en réparation'
+            });
+        }
+    }
+);
+
+// TERMINER LA RÉPARATION D'UN ÉQUIPEMENT
+
+app.put(
+    '/api/equipements/:id/reparation/fin',
+    verifierConnexion,
+    async (req, res) => {
+        try {
+            const { id } = req.params;
+            const { resolution } = req.body;
+
+            // La note de résolution est obligatoire
+            if (!resolution || resolution.trim() === '') {
+                return res.status(400).json({
+                    erreur: 'La note de résolution est obligatoire'
+                });
+            }
+
+            const pool = await connecterBD();
+
+            // Seul un équipement actuellement en réparation
+            // peut redevenir disponible
+            const resultat = await pool.request()
+                .input('id', id)
+                .query(`
+                    UPDATE Equipements
+                    SET etat = 'Disponible'
+                    WHERE id = @id
+                      AND etat = 'En réparation'
+                `);
+
+            if (resultat.rowsAffected[0] === 0) {
+                return res.status(404).json({
+                    erreur: 'Équipement en réparation introuvable'
+                });
+            }
+
+            // Enregistre la fin de la réparation dans l'historique
+            await pool.request()
+                .input('equipement_id', id)
+                .input('utilisateur_id', req.session.utilisateur.id)
+                .input('type_mouvement', 'Fin de réparation')
+                .input('note', resolution.trim())
+                .query(`
+                    INSERT INTO Mouvements
+                    (
+                        equipement_id,
+                        utilisateur_id,
+                        type_mouvement,
+                        note
+                    )
+                    VALUES
+                    (
+                        @equipement_id,
+                        @utilisateur_id,
+                        @type_mouvement,
+                        @note
+                    )
+                `);
+
+            res.json({
+                message: 'Réparation terminée avec succès'
+            });
+
+        } catch (erreur) {
+            console.error(erreur);
+
+            res.status(500).json({
+                erreur: 'Impossible de terminer la réparation'
+            });
+        }
+    }
+);
 
 
 // MODIFIER UN ÉQUIPEMENT
