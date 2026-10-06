@@ -605,6 +605,87 @@ app.put(
     }
 );
 
+// METTRE UN ÉQUIPEMENT HORS SERVICE / À REMPLACER
+
+app.put(
+    '/api/equipements/:id/hors-service',
+    verifierConnexion,
+    verifierAdmin,
+    async (req, res) => {
+        try {
+            const { id } = req.params;
+            const { raison } = req.body;
+
+            // La raison est obligatoire
+            if (!raison || raison.trim() === '') {
+                return res.status(400).json({
+                    erreur: 'La raison est obligatoire'
+                });
+            }
+
+            const pool = await connecterBD();
+
+            // L'équipement reste dans la base,
+            // seul son état est modifié
+            const resultat = await pool.request()
+                .input('id', id)
+                .query(`
+                    UPDATE Equipements
+                    SET
+                        etat = 'À remplacer / Hors service',
+                        attribue_a_id = NULL,
+                        date_attribution = NULL
+                    WHERE id = @id
+                      AND etat NOT IN (
+                          'En attente de validation',
+                          'À remplacer / Hors service',
+                          'Perdu / Volé'
+                      )
+                `);
+
+            if (resultat.rowsAffected[0] === 0) {
+                return res.status(404).json({
+                    erreur: 'Équipement pouvant être mis hors service introuvable'
+                });
+            }
+
+            // Conserve la raison et l'administrateur
+            // dans l'historique
+            await pool.request()
+                .input('equipement_id', id)
+                .input('utilisateur_id', req.session.utilisateur.id)
+                .input('type_mouvement', 'Hors service')
+                .input('note', raison.trim())
+                .query(`
+                    INSERT INTO Mouvements
+                    (
+                        equipement_id,
+                        utilisateur_id,
+                        type_mouvement,
+                        note
+                    )
+                    VALUES
+                    (
+                        @equipement_id,
+                        @utilisateur_id,
+                        @type_mouvement,
+                        @note
+                    )
+                `);
+
+            res.json({
+                message: 'Équipement mis hors service avec succès'
+            });
+
+        } catch (erreur) {
+            console.error(erreur);
+
+            res.status(500).json({
+                erreur: 'Impossible de mettre l’équipement hors service'
+            });
+        }
+    }
+);
 
 // MODIFIER UN ÉQUIPEMENT
 app.put('/api/equipements/:id', verifierConnexion, async (req, res) => {
