@@ -687,6 +687,85 @@ app.put(
     }
 );
 
+// DÉCLARER UN ÉQUIPEMENT PERDU / VOLÉ
+
+app.put(
+    '/api/equipements/:id/perdu-vole',
+    verifierConnexion,
+    verifierAdmin,
+    async (req, res) => {
+        try {
+            const { id } = req.params;
+            const { note } = req.body;
+
+            // Une note est obligatoire
+            if (!note || note.trim() === '') {
+                return res.status(400).json({
+                    erreur: 'Une note est obligatoire'
+                });
+            }
+
+            const pool = await connecterBD();
+
+            const resultat = await pool.request()
+                .input('id', id)
+                .query(`
+                    UPDATE Equipements
+                    SET
+                        etat = 'Perdu / Volé',
+                        attribue_a_id = NULL,
+                        date_attribution = NULL
+                    WHERE id = @id
+                      AND etat NOT IN (
+                          'En attente de validation',
+                          'À remplacer / Hors service',
+                          'Perdu / Volé'
+                      )
+                `);
+
+            if (resultat.rowsAffected[0] === 0) {
+                return res.status(404).json({
+                    erreur: 'Équipement pouvant être déclaré perdu ou volé introuvable'
+                });
+            }
+
+            // Enregistre la déclaration dans l'historique
+            await pool.request()
+                .input('equipement_id', id)
+                .input('utilisateur_id', req.session.utilisateur.id)
+                .input('type_mouvement', 'Perdu / Volé')
+                .input('note', note.trim())
+                .query(`
+                    INSERT INTO Mouvements
+                    (
+                        equipement_id,
+                        utilisateur_id,
+                        type_mouvement,
+                        note
+                    )
+                    VALUES
+                    (
+                        @equipement_id,
+                        @utilisateur_id,
+                        @type_mouvement,
+                        @note
+                    )
+                `);
+
+            res.json({
+                message: 'Équipement déclaré perdu ou volé avec succès'
+            });
+
+        } catch (erreur) {
+            console.error(erreur);
+
+            res.status(500).json({
+                erreur: 'Impossible de déclarer l’équipement perdu ou volé'
+            });
+        }
+    }
+);
+
 // MODIFIER UN ÉQUIPEMENT
 app.put('/api/equipements/:id', verifierConnexion, async (req, res) => {
     try {
