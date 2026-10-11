@@ -321,6 +321,102 @@ app.put(
     }
 );
 
+// ATTRIBUER UN ÉQUIPEMENT À UN EMPLOYÉ
+app.put(
+    '/api/equipements/:id/attribution',
+    verifierConnexion,
+    verifierAdmin,
+    async (req, res) => {
+        try {
+            const { id } = req.params;
+            const { utilisateur_id } = req.body;
+
+            if (!Number.isInteger(utilisateur_id) || utilisateur_id <= 0) {
+                return res.status(400).json({
+                    erreur: 'Un identifiant d’employé valide est obligatoire'
+                });
+            }
+
+            const pool = await connecterBD();
+
+            const employe = await pool.request()
+                .input('utilisateur_id', utilisateur_id)
+                .query(`
+                    SELECT id
+                    FROM Utilisateurs
+                    WHERE id = @utilisateur_id
+                      AND role = 'Employé'
+                      AND actif = 1
+                `);
+
+            if (employe.recordset.length === 0) {
+                return res.status(404).json({
+                    erreur: 'Employé actif introuvable'
+                });
+            }
+
+            const transaction = pool.transaction();
+            await transaction.begin();
+
+            try {
+                const resultat = await transaction.request()
+                    .input('id', id)
+                    .input('utilisateur_id', utilisateur_id)
+                    .query(`
+                        UPDATE Equipements
+                        SET
+                            etat = 'Attribué',
+                            attribue_a_id = @utilisateur_id,
+                            date_attribution = GETDATE()
+                        WHERE id = @id
+                          AND etat = 'Disponible'
+                          AND attribue_a_id IS NULL
+                    `);
+
+                if (resultat.rowsAffected[0] === 0) {
+                    await transaction.rollback();
+
+                    return res.status(409).json({
+                        erreur: 'Équipement indisponible pour attribution'
+                    });
+                }
+
+                await transaction.request()
+                    .input('equipement_id', id)
+                    .input('utilisateur_id', req.session.utilisateur.id)
+                    .input('type_mouvement', 'Attribution')
+                    .input(
+                        'note',
+                        `Équipement attribué à l’utilisateur ${utilisateur_id}`
+                    )
+                    .query(`
+                        INSERT INTO Mouvements
+                            (equipement_id, utilisateur_id, type_mouvement, note)
+                        VALUES
+                            (@equipement_id, @utilisateur_id, @type_mouvement, @note)
+                    `);
+
+                await transaction.commit();
+
+                res.json({
+                    message: 'Équipement attribué avec succès'
+                });
+
+            } catch (erreur) {
+                await transaction.rollback();
+                throw erreur;
+            }
+
+        } catch (erreur) {
+            console.error(erreur);
+
+            res.status(500).json({
+                erreur: 'Impossible d’attribuer l’équipement'
+            });
+        }
+    }
+);
+
 // SIGNALER LE RETOUR D'UN ÉQUIPEMENT
 
 app.put(
@@ -767,6 +863,7 @@ app.put(
 );
 
 // MODIFIER UN ÉQUIPEMENT
+
 app.put('/api/equipements/:id', verifierConnexion, async (req, res) => {
     try {
         const { id } = req.params;
@@ -778,7 +875,6 @@ app.put('/api/equipements/:id', verifierConnexion, async (req, res) => {
             categorie_id,
             quantite,
             prix,
-            etat,
             emplacement_id,
             seuil_minimum
         } = req.body;
@@ -793,7 +889,6 @@ app.put('/api/equipements/:id', verifierConnexion, async (req, res) => {
             .input('categorie_id', categorie_id)
             .input('quantite', quantite)
             .input('prix', prix)
-            .input('etat', etat)
             .input('emplacement_id', emplacement_id)
             .input('seuil_minimum', seuil_minimum)
             .query(`
@@ -805,7 +900,6 @@ app.put('/api/equipements/:id', verifierConnexion, async (req, res) => {
                     categorie_id = @categorie_id,
                     quantite = @quantite,
                     prix = @prix,
-                    etat = @etat,
                     emplacement_id = @emplacement_id,
                     seuil_minimum = @seuil_minimum
                 WHERE id = @id
@@ -830,130 +924,8 @@ app.put('/api/equipements/:id', verifierConnexion, async (req, res) => {
     }
 });
 
-// ATTRIBUER UN ÉQUIPEMENT À UN EMPLOYÉ
 
-app.put(
-    '/api/equipements/:id/attribution',
-    verifierConnexion,
-    verifierAdmin,
-    async (req, res) => {
-        try {
-            const { id } = req.params;
-            const { utilisateur_id } = req.body;
 
-            const pool = await connecterBD();
-
-            // Vérifie que l'employé existe et que son compte est actif
-            const employe = await pool.request()
-                .input('utilisateur_id', utilisateur_id)
-                .query(`
-                    SELECT id
-                    FROM Utilisateurs
-                    WHERE id = @utilisateur_id
-                      AND role = 'Employé'
-                      AND actif = 1
-                `);
-
-            if (employe.recordset.length === 0) {
-                return res.status(404).json({
-                    erreur: 'Employé actif introuvable'
-                });
-            }
-
-            // Attribue uniquement un équipement actuellement disponible
-            const resultat = await pool.request()
-                .input('id', id)
-                .input('utilisateur_id', utilisateur_id)
-                .query(`
-                    UPDATE Equipements
-                    SET
-                        etat = 'Attribué',
-                        attribue_a_id = @utilisateur_id,
-                        date_attribution = GETDATE()
-                    WHERE id = @id
-                      AND etat = 'Disponible'
-                `);
-
-            if (resultat.rowsAffected[0] === 0) {
-                return res.status(404).json({
-                    erreur: 'Équipement disponible introuvable'
-                });
-            }
-
-            // Enregistre l'attribution dans l'historique
-            await pool.request()
-                .input('equipement_id', id)
-                .input('utilisateur_id', req.session.utilisateur.id)
-                .input('type_mouvement', 'Attribution')
-                .input(
-                    'note',
-                    `Équipement attribué à l'utilisateur ${utilisateur_id}`
-                )
-                .query(`
-                    INSERT INTO Mouvements
-                    (
-                        equipement_id,
-                        utilisateur_id,
-                        type_mouvement,
-                        note
-                    )
-                    VALUES
-                    (
-                        @equipement_id,
-                        @utilisateur_id,
-                        @type_mouvement,
-                        @note
-                    )
-                `);
-
-            res.json({
-                message: 'Équipement attribué avec succès'
-            });
-
-        } catch (erreur) {
-            console.error(erreur);
-
-            res.status(500).json({
-                erreur: 'Impossible d’attribuer l’équipement'
-            });
-        }
-    }
-);
-
-// SUPPRIMER UN ÉQUIPEMENT
-// Cette route sera remplacée plus tard par la logique
-// Hors service + historique des mouvements.
-app.delete('/api/equipements/:id', async (req, res) => {
-    try {
-        const { id } = req.params;
-
-        const pool = await connecterBD();
-
-        const resultat = await pool.request()
-            .input('id', id)
-            .query(`
-                DELETE FROM Equipements
-                WHERE id = @id
-            `);
-
-        if (resultat.rowsAffected[0] === 0) {
-            return res.status(404).json({
-                erreur: 'Équipement introuvable'
-            });
-        }
-
-        res.json({
-            message: 'Équipement supprimé avec succès'
-        });
-
-    } catch (erreur) {
-        console.error(erreur);
-
-        res.status(500).json({
-            erreur: 'Impossible de supprimer l’équipement'
-        });
-    }
-});
 
 
 // ========================================
