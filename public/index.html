@@ -1,67 +1,427 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TechStock</title>
-    <link rel="stylesheet" href="style.css">
-</head>
-<body>
-   <main class="connexion">
-
-    <div id="sectionConnexion">
-        <h1>TechStock</h1>
-        <p>Gestion du parc informatique</p>
-
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TechStock — Inventaire. Simplement.</title>
+    <link rel="stylesheet" href="style.css" />
+    <script defer src="script.js"></script>
+  </head>
+  <body>
+    <section id="sectionConnexion" class="login">
+      <div class="login-card">
+        <div class="brand">
+          <span class="logo">⬡</span>
+          <div>
+            Tech<span>Stock</span><small>Inventaire. Simplement.</small>
+          </div>
+        </div>
+        <h1>Gestion du parc informatique</h1>
         <form id="formConnexion">
-            <label for="email">Adresse courriel</label>
-            <input
-                type="email"
-                id="email"
-                name="email"
-                required
-            >
-
-            <label for="motDePasse">Mot de passe</label>
-            <input
-                type="password"
-                id="motDePasse"
-                name="motDePasse"
-                required
-            >
-
-            <button type="submit">Se connecter</button>
-
-            <p id="messageConnexion"></p>
+          <label for="email">Adresse courriel</label
+          ><input
+            id="email"
+            type="email"
+            autocomplete="username"
+            required
+          /><label for="motDePasse">Mot de passe</label
+          ><input
+            id="motDePasse"
+            type="password"
+            autocomplete="current-password"
+            required
+          /><button class="primary" type="submit">Se connecter</button>
+          <p id="messageConnexion" role="status"></p>
         </form>
+      </div>
+    </section>
+    <div id="application" class="app" hidden>
+      <aside class="sidebar">
+        <a class="brand" href="#tableau-de-bord"
+          ><span class="logo">⬡</span>
+          <div>
+            Tech<span>Stock</span><small>Inventaire. Simplement.</small>
+          </div></a
+        >
+        <nav aria-label="Navigation principale">
+          <a href="#tableau-de-bord" data-page="tableau-de-bord"
+            ><span data-icon="home"></span>Tableau de bord</a
+          >
+          <a href="#inventaire" data-page="inventaire"
+            ><span data-icon="box"></span>Inventaire</a
+          >
+          <a href="#ajouter" data-page="ajouter"
+            ><span data-icon="plus"></span>Ajouter un équipement</a
+          >
+          <a href="#categories" data-page="categories"
+            ><span data-icon="folder"></span>Catégories</a
+          >
+          <a href="#emplacements" data-page="emplacements"
+            ><span data-icon="pin"></span>Emplacements</a
+          >
+          <a href="#utilisateurs" data-page="utilisateurs" data-admin
+            ><span data-icon="users"></span>Utilisateurs</a
+          >
+          <a href="#rapports" data-page="rapports"
+            ><span data-icon="chart"></span>Rapports</a
+          >
+          <a href="#parametres" data-page="parametres"
+            ><span data-icon="settings"></span>Paramètres</a
+          >
+        </nav>
+        <div class="sidebar-bottom">
+          <div class="help">
+            <span data-icon="help"></span>
+            <div>
+              <strong>Besoin d’aide ?</strong
+              ><small>Documentation non disponible</small>
+            </div>
+          </div>
+          <small>TechStock v1.0.0</small>
+        </div>
+      </aside>
+      <div class="workspace">
+        <header class="topbar">
+          <label class="search"
+            ><span data-icon="search"></span
+            ><input
+              id="recherche"
+              type="search"
+              placeholder="Rechercher un équipement, une catégorie, un emplacement, un numéro de série…"
+              aria-label="Rechercher dans l’inventaire" /></label
+          ><button
+            id="notifications"
+            class="icon-button"
+            aria-label="Voir les alertes"
+          >
+            <span data-icon="bell"></span><span id="badgeAlertes" hidden></span>
+          </button>
+          <div class="profile">
+            <span class="avatar" id="initiales"></span>
+            <div>
+              <strong id="nomUtilisateur"></strong
+              ><small id="roleUtilisateur"></small>
+            </div>
+          </div>
+          <button id="btnDeconnexion" class="logout">
+            <span data-icon="logout"></span>Déconnexion
+          </button>
+        </header>
+        <main>
+          <p id="messageInventaire" role="status" class="message"></p>
+          <section
+            id="bannierePages"
+            class="light-hero"
+            aria-label="TechStock — Votre inventaire sous contrôle"
+            hidden
+          >
+            <div class="light-hero-copy">
+              <h2>Votre inventaire.<br /><span>Sous contrôle.</span></h2>
+              <p>
+                Gérez vos équipements informatiques simplement,<br />efficacement
+                et en toute sécurité.
+              </p>
+            </div>
+            <div class="light-hero-photo" aria-hidden="true"></div>
+          </section>
+          <section id="pageDashboard" class="page" hidden>
+            <div class="dashboard-grid">
+              <div class="dashboard-main">
+                <section class="hero">
+                  <div class="hero-copy">
+                    <div class="hero-brand">
+                      ⬡ &nbsp; Tech<span>Stock</span>
+                    </div>
+                    <h1>Votre inventaire.<br /><em>Sous contrôle.</em></h1>
+                    <p>
+                      Gérez vos équipements informatiques simplement,<br />efficacement
+                      et en toute sécurité.
+                    </p>
+                    <div class="hero-actions">
+                      <a class="primary" href="#ajouter"
+                        >＋ &nbsp; Ajouter un équipement</a
+                      ><a class="outline" href="#inventaire"
+                        >Voir l’inventaire &nbsp; →</a
+                      >
+                    </div>
+                  </div>
+                  <div class="hero-photo" aria-hidden="true"></div>
+                </section>
+                <div id="statistiques" class="stats"></div>
+                <section class="card">
+                  <div class="card-heading">
+                    <h2>Catégories</h2>
+                    <a href="#categories">Voir toutes les catégories →</a>
+                  </div>
+                  <div id="categoriesDashboard" class="category-tiles"></div>
+                </section>
+                <section class="card">
+                  <div class="card-heading">
+                    <h2>Équipements récents</h2>
+                    <a href="#inventaire">Voir tout l’inventaire →</a>
+                  </div>
+                  <div class="table-scroll">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Nom</th>
+                          <th>Catégorie</th>
+                          <th>Numéro de série</th>
+                          <th>Emplacement</th>
+                          <th>Statut</th>
+                          <th>Date d’ajout</th>
+                        </tr>
+                      </thead>
+                      <tbody id="equipementsRecents"></tbody>
+                    </table>
+                  </div>
+                </section>
+              </div>
+              <div class="dashboard-side">
+                <section class="card" id="carteAlertes">
+                  <div class="card-heading">
+                    <h2>Alertes et actions</h2>
+                    <a href="#inventaire">Voir tout →</a>
+                  </div>
+                  <div id="alertes"></div>
+                </section>
+                <section class="card analysis">
+                  <div class="card-heading">
+                    <h2>Analyse rapide</h2>
+                    <span class="beta">BETA</span>
+                  </div>
+                  <div class="analysis-copy">
+                    <span data-icon="bot"></span>
+                    <p>
+                      Obtenez un résumé intelligent<br />de votre inventaire et
+                      des recommandations.
+                    </p>
+                  </div>
+                  <button class="outline" disabled>
+                    Analyser mon inventaire &nbsp; →</button
+                  ><small
+                    >Analyse IA non connectée dans le backend actuel.</small
+                  >
+                </section>
+                <section class="card">
+                  <div class="card-heading">
+                    <h2>Répartition par statut</h2>
+                  </div>
+                  <div class="status-chart">
+                    <div id="anneauStatuts" class="donut">
+                      <div>
+                        <strong id="totalAnneau">—</strong
+                        ><small>équipements</small>
+                      </div>
+                    </div>
+                    <div id="legendeStatuts"></div>
+                  </div>
+                </section>
+                <section class="card">
+                  <div class="card-heading"><h2>Activité récente</h2></div>
+                  <p class="empty">
+                    L’historique d’activité n’est pas fourni par le backend
+                    actuel.
+                  </p>
+                </section>
+              </div>
+            </div>
+          </section>
+          <section id="sectionInventaire" class="page" hidden>
+            <div class="page-heading">
+              <div>
+                <h1>Inventaire informatique</h1>
+                <p>Liste des équipements de l’entreprise</p>
+              </div>
+              <a href="#ajouter" class="primary">＋ Ajouter un équipement</a>
+            </div>
+            <section class="card">
+              <div class="toolbar">
+                <label
+                  >Statut
+                  <select id="filtreStatut">
+                    <option value="">Tous les statuts</option>
+                  </select></label
+                ><span id="nombreResultats"></span>
+              </div>
+              <div class="table-scroll">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Nom</th>
+                      <th>Catégorie</th>
+                      <th>Numéro de série</th>
+                      <th>Emplacement</th>
+                      <th>Statut</th>
+                      <th>Quantité</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="listeEquipements"></tbody>
+                </table>
+              </div>
+            </section>
+          </section>
+          <section id="pageAjouter" class="page" hidden>
+            <div class="page-heading">
+              <div>
+                <h1 id="titreFormulaire">Ajouter un équipement</h1>
+                <p id="infoAjout"></p>
+              </div>
+            </div>
+            <section class="card form-card">
+              <form id="formEquipement" class="form-grid">
+                <label>Nom<input name="nom" required maxlength="255" /></label
+                ><label
+                  >Numéro de série<input
+                    name="numero_serie"
+                    required
+                    maxlength="255" /></label
+                ><label
+                  >Catégorie<select
+                    name="categorie_id"
+                    required
+                  ></select></label
+                ><label
+                  >Emplacement<select
+                    name="emplacement_id"
+                    required
+                  ></select></label
+                ><label
+                  >Quantité<input
+                    name="quantite"
+                    type="number"
+                    min="0"
+                    step="1"
+                    required
+                    value="1" /></label
+                ><label
+                  >Prix<input
+                    name="prix"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    required
+                    value="0" /></label
+                ><label
+                  >Seuil minimum<input
+                    name="seuil_minimum"
+                    type="number"
+                    min="0"
+                    step="1"
+                    required
+                    value="0" /></label
+                ><label class="wide"
+                  >Description<textarea name="description" rows="4"></textarea>
+                </label>
+                <p class="wide empty" id="infoReferentiels"></p>
+                <div class="wide form-actions">
+                  <button type="submit" class="primary">Enregistrer</button
+                  ><a href="#inventaire" class="outline">Annuler</a>
+                </div>
+                <p id="messageEquipement" class="wide" role="status"></p>
+              </form>
+            </section>
+          </section>
+          <section id="pageCategories" class="page" hidden>
+            <div class="page-heading">
+              <div>
+                <h1>Catégories</h1>
+                <p>Répartition de votre inventaire par catégorie</p>
+              </div>
+            </div>
+            <section class="card">
+              <div id="categoriesClaires" class="category-tiles"></div>
+              <div id="barresCategories" class="bars"></div>
+            </section>
+          </section>
+          <section id="pageEmplacements" class="page" hidden>
+            <div class="page-heading">
+              <div>
+                <h1>Emplacements</h1>
+                <p>Répartition de votre inventaire par emplacement</p>
+              </div>
+            </div>
+            <section class="card">
+              <div id="barresEmplacements" class="bars"></div>
+            </section>
+          </section>
+          <section id="pageUtilisateurs" class="page" hidden>
+            <div class="page-heading">
+              <div>
+                <h1>Utilisateurs</h1>
+                <p>Gestion des employés</p>
+              </div>
+            </div>
+            <section class="card">
+              <div class="table-scroll">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Nom</th>
+                      <th>Courriel</th>
+                      <th>Rôle</th>
+                      <th>Statut</th>
+                    </tr>
+                  </thead>
+                  <tbody id="listeUtilisateurs"></tbody>
+                </table>
+              </div>
+              <p id="messageUtilisateurs" role="status"></p>
+            </section>
+            <section class="card form-card">
+              <h2>Ajouter un employé</h2>
+              <form id="formUtilisateur" class="form-grid">
+                <label>Nom<input name="nom" required /></label
+                ><label
+                  >Adresse courriel<input
+                    name="email"
+                    type="email"
+                    required /></label
+                ><label
+                  >Mot de passe<input
+                    name="mot_de_passe"
+                    type="password"
+                    autocomplete="new-password"
+                    required
+                /></label>
+                <div class="wide">
+                  <button type="submit" class="primary">Créer l’employé</button>
+                </div>
+              </form>
+            </section>
+          </section>
+          <section id="pageRapports" class="page" hidden>
+            <div class="page-heading">
+              <div>
+                <h1>Rapports</h1>
+                <p>Répartition de l’inventaire actuel</p>
+              </div>
+            </div>
+            <div class="reports-grid">
+              <section class="card">
+                <h2>Répartition par catégorie</h2>
+                <div id="rapportCategories" class="bars"></div>
+              </section>
+              <section class="card">
+                <h2>Répartition par emplacement</h2>
+                <div id="rapportEmplacements" class="bars"></div>
+              </section>
+            </div>
+          </section>
+          <section id="pageParametres" class="page" hidden>
+            <div class="page-heading"><h1>Paramètres</h1></div>
+            <section class="card form-card">
+              <h2>Profil</h2>
+              <dl id="detailsProfil"></dl>
+              <p class="empty">
+                La modification des paramètres n’est pas disponible dans le
+                backend actuel.
+              </p>
+            </section>
+          </section>
+        </main>
+      </div>
     </div>
-
-    <button id="btnDeconnexion" type="button">Se déconnecter</button>
-
-    <section id="sectionInventaire" hidden>
-    <h2>Inventaire informatique</h2>
-
-    <p>Liste des équipements de l'entreprise</p>
-
-    <table>
-        <thead>
-            <tr>
-                <th>Nom</th>
-                <th>Catégorie</th>
-                <th>État</th>
-                <th>Emplacement</th>
-            </tr>
-        </thead>
-
-        <tbody id="listeEquipements">
-        </tbody>
-    </table>
-
-    <p id="messageInventaire"></p>
-</section>
-
-</main>
-
-    <script src="script.js"></script>
-</body>
+  </body>
 </html>
