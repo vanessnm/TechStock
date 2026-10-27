@@ -299,13 +299,13 @@ main {
   height: 100%;
   background-image:
     linear-gradient(90deg, #07141d, transparent 22%),
-    url("assets/reference-sombre.png");
+    url("assets/banniere-dashboard.png");
   background-size:
     100% 100%,
-    374.634% 379.259%;
+    cover;
   background-position:
     0 0,
-    61.279% 11.936%;
+    center center;
   background-repeat: no-repeat;
   opacity: 0.95;
 }
@@ -786,7 +786,7 @@ dd {
     width: 45%;
     background-position:
       0 0,
-      -630px -71px;
+      center center;
   }
   .hero {
     min-height: 300px;
@@ -1104,3 +1104,133 @@ dd {
 .report-item { padding: 14px 0; border-bottom: 1px solid var(--line); }
 .report-item h3 { margin: 0 0 8px; font-size: 14px; }
 .report-description { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Lien de consultation des séries : visible sans survol. */
+a.serial-numbers-link { text-decoration: underline; text-underline-offset: 2px; }
+
+.notifications-dialog { max-height: 80vh; overflow: hidden; }
+.notifications-dialog[open] { display: flex; flex-direction: column; gap: 12px; }
+.notifications-dialog-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-shrink: 0; }
+.notifications-dialog-header h2 { margin: 0; }
+.notifications-close { font-size: 24px; line-height: 1; padding: 4px 8px; flex-shrink: 0; }
+.notifications-dialog .notifications-list { min-height: 0; overflow-y: auto; }
+.notifications-dialog > label, .notifications-dialog > button { flex-shrink: 0; }
+
+/* Bannière du tableau de bord : photo de référence entière et texte indépendant. */
+.hero {
+  container-type: inline-size;
+  background: radial-gradient(ellipse at 88% 62%, #142735 0%, #0d1d29 34%, #07141d 74%);
+}
+.hero .hero-photo {
+  top: auto;
+  bottom: 0;
+  right: 0;
+  width: min(46%, 310px);
+  height: auto;
+  aspect-ratio: 400 / 296;
+  max-height: none;
+  background-image: linear-gradient(90deg, #07141d, transparent 8%), url("assets/banniere-plante-portable.png");
+  background-size: 100% 100%, contain;
+  background-position: 0 0, center bottom;
+  background-repeat: no-repeat;
+  mask-image: linear-gradient(to bottom, transparent 0%, rgba(0, 0, 0, 0.08) 10%, rgba(0, 0, 0, 0.3) 23%, rgba(0, 0, 0, 0.65) 36%, #000 50%, #000 88%, transparent 100%), linear-gradient(to right, transparent 0%, #000 20%, #000 68%, rgba(0, 0, 0, 0.85) 77%, rgba(0, 0, 0, 0.5) 87%, rgba(0, 0, 0, 0.15) 95%, transparent 100%);
+  mask-composite: intersect;
+  opacity: 0.95;
+}
+.hero .hero-tagline {
+  position: absolute;
+  z-index: 2;
+  top: 28px;
+  right: 16px;
+  width: 92px;
+  color: #aebbc6;
+  font-weight: 400;
+  text-shadow: none;
+  font-size: 14px;
+  line-height: 1.65;
+}
+.hero-tagline span { display: block; white-space: nowrap; }
+@media (min-width: 1600px) {
+  .hero .hero-photo { width: min(55%, 440px); right: 120px; }
+  .hero .hero-tagline { width: 120px; right: 20px; top: 36px; font-size: 17px; }
+}
+@container (max-width: 760px) {
+  .hero .hero-actions { max-width: 210px; flex-wrap: wrap; }
+  .hero .hero-copy p { max-width: 65%; }
+}
+@media (max-width: 700px) {
+  .hero .hero-copy p { max-width: none; }
+  .hero .hero-actions { max-width: none; }
+  .hero .hero-photo {
+    position: relative;
+    right: auto;
+    bottom: auto;
+    width: calc(100% - 75px);
+    height: auto;
+    aspect-ratio: 400 / 296;
+    margin-top: 18px;
+  }
+  .hero .hero-tagline {
+    top: auto;
+    bottom: 95px;
+    right: 18px;
+    width: 75px;
+    font-size: 12px;
+  }
+}
+
+/* Cartes de catégories du tableau de bord uniquement. */
+.dashboard-categories { container-type: inline-size; }
+#categoriesDashboard { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+#categoriesDashboard .category-tile { padding: 16px 6px 14px; min-height: 160px; }
+#categoriesDashboard .category-picture { width: 75px; height: 65px; margin: 8px auto 16px; transform: scale(1.15); transform-origin: center; }
+#categoriesDashboard .category-tile small { font-size: 12px; line-height: 1.4; }
+#categoriesDashboard .category-tile .count { font-size: 11px; margin-top: 8px; }
+@container (max-width: 520px) {
+  #categoriesDashboard { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+}
+
+/* En-tête aligné sur les deux colonnes du tableau de bord uniquement. */
+.topbar-actions { display: contents; }
+@media (min-width: 951px) {
+  body:has(#pageDashboard:not([hidden])) .topbar {
+    display: grid;
+    grid-template-columns: minmax(0, 2.1fr) minmax(290px, 1fr);
+    column-gap: 14px;
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+  body:has(#pageDashboard:not([hidden])) .topbar-actions {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 28px;
+    min-width: 0;
+  }
+  body:has(#pageDashboard:not([hidden])) .topbar-actions > * { flex-shrink: 0; }
+}
+@media (min-width: 951px) and (max-width: 1599px) {
+  body:has(#pageDashboard:not([hidden])) .topbar .profile { min-width: auto; }
+  body:has(#pageDashboard:not([hidden])) .topbar .profile > div { display: none; }
+}
+@media (min-width: 951px) and (max-width: 1250px) {
+  body:has(#pageDashboard:not([hidden])) .topbar { grid-template-columns: minmax(0, 1fr) 300px; }
+}
+
+/* Séparateurs de l’en-tête, décoratifs et sans effet sur les dimensions. */
+@media (min-width: 951px) {
+  body:has(#pageDashboard:not([hidden])) .topbar-actions .profile,
+  body:has(#pageDashboard:not([hidden])) .topbar-actions .logout { position: relative; }
+  body:has(#pageDashboard:not([hidden])) .topbar-actions .profile::before,
+  body:has(#pageDashboard:not([hidden])) .topbar-actions .logout::before {
+    content: "";
+    position: absolute;
+    left: -14.5px;
+    top: 50%;
+    width: 1px;
+    height: 22px;
+    transform: translateY(-50%);
+    background: rgba(167, 185, 201, 0.25);
+    pointer-events: none;
+  }
+}

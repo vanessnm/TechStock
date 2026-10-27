@@ -10,13 +10,13 @@ module.exports = function enregistrerSignalements(app, connecterBD, verifierConn
       const result = await pool.request()
         .input('admin', req.session.utilisateur.role === 'Administrateur' ? 1 : 0)
         .input('user', req.session.utilisateur.id)
-        .query(`SELECT s.*, e.nom AS equipement_nom, u.nom AS employe_nom,
-          a.nom AS administrateur_nom
-          FROM Signalements s JOIN Equipements e ON e.id=s.equipement_id
-          JOIN Utilisateurs u ON u.id=s.employe_id
-          LEFT JOIN Utilisateurs a ON a.id=s.traite_par_id
-          WHERE @admin=1 OR s.employe_id=@user
-          ORDER BY s.date_signalement DESC, s.id DESC`);
+        .query(`SELECT s.id,s.unite_id AS equipement_id,s.equipement_id AS equipement_origine_id,s.unite_id,s.employe_id,s.type_signalement,s.description,s.etat_initial,s.date_signalement,s.statut,s.commentaire,s.traite_par_id,s.date_decision,
+          COALESCE(e.nom,ancien.nom)+CASE WHEN e.id IS NULL THEN N' · ancienne demande à associer' ELSE N' · '+COALESCE(e.numero_serie,e.code_interne) END AS equipement_nom,
+          u.nom AS employe_nom,a.nom AS administrateur_nom
+          FROM Signalements s LEFT JOIN EquipementsUnitaires e ON e.id=s.unite_id
+          JOIN Equipements ancien ON ancien.id=s.equipement_id JOIN Utilisateurs u ON u.id=s.employe_id
+          LEFT JOIN Utilisateurs a ON a.id=s.traite_par_id WHERE @admin=1 OR s.employe_id=@user
+          ORDER BY s.date_signalement DESC,s.id DESC`);
       res.json(result.recordset);
     } catch (error) { console.error(error); res.status(500).json({erreur:'Impossible de charger les signalements'}); }
   });
@@ -28,15 +28,14 @@ module.exports = function enregistrerSignalements(app, connecterBD, verifierConn
     let tx;
     try {
       const pool = await connecterBD(); tx=pool.transaction(); await tx.begin();
-      const e=(await tx.request().input('id',equipement_id).query('SELECT etat FROM Equipements WITH (UPDLOCK,HOLDLOCK) WHERE id=@id')).recordset[0];
+      const e=(await tx.request().input('id',equipement_id).query('SELECT etat FROM EquipementsUnitaires WITH (UPDLOCK,HOLDLOCK) WHERE id=@id')).recordset[0];
       if (!e || !(type_signalement === 'En réparation' ? ['Disponible', 'Attribué'] : etats).includes(e.etat)) { await tx.rollback(); tx=null; return res.status(409).json({erreur:'Cet équipement ne peut pas être signalé dans son état actuel.'}); }
       await tx.request().input('equipement',equipement_id).input('employe',req.session.utilisateur.id)
         .input('type',type_signalement).input('description',description.trim()).input('etat',e.etat)
-        .query(`INSERT INTO Signalements(equipement_id,employe_id,type_signalement,description,etat_initial)
-          VALUES(@equipement,@employe,@type,@description,@etat)`);
+        .query(`INSERT INTO Signalements(equipement_id,unite_id,employe_id,type_signalement,description,etat_initial,etat_initial_unite)
+          VALUES((SELECT equipement_id FROM UnitesEquipement WHERE id=@equipement),@equipement,@employe,@type,@description,@etat,@etat)`);
       await tx.request().input('equipement',equipement_id).input('employe',req.session.utilisateur.id).input('note',description.trim())
-        .query(`INSERT INTO Mouvements(equipement_id,utilisateur_id,type_mouvement,note)
-          VALUES(@equipement,@employe,N'Signalement soumis',@note)`);
+        .query(`INSERT INTO Mouvements(equipement_id,utilisateur_id,type_mouvement,note,unite_id) VALUES((SELECT equipement_id FROM UnitesEquipement WHERE id=@equipement),@employe,N'Signalement soumis',@note,@equipement)`);
       await tx.commit(); tx=null;
       res.status(201).json({message:'Signalement soumis. Le statut de l’équipement reste inchangé.'});
     } catch(error) {
@@ -57,10 +56,16 @@ module.exports = function enregistrerSignalements(app, connecterBD, verifierConn
       const s=(await tx.request().input('id',id).query('SELECT * FROM Signalements WITH (UPDLOCK,HOLDLOCK) WHERE id=@id')).recordset[0];
       if(!s||s.statut!=='En attente'){await tx.rollback();tx=null;return res.status(409).json({erreur:'Demande introuvable ou déjà traitée.'});}
       if(s.employe_id===req.session.utilisateur.id){await tx.rollback();tx=null;return res.status(403).json({erreur:'Vous ne pouvez pas traiter votre propre demande.'});}
+      if(!s.unite_id){
+        if(decision==='Acceptée'){await tx.rollback();tx=null;return res.status(409).json({erreur:'Cette ancienne demande doit être associée à une unité précise avant acceptation.'});}
+        await tx.request().input('id',id).input('note',commentaire.trim()).input('admin',req.session.utilisateur.id).query("UPDATE Signalements SET statut=N'Refusée',commentaire=@note,traite_par_id=@admin,date_decision=SYSUTCDATETIME() WHERE id=@id");
+        await tx.request().input('equipement',s.equipement_id).input('admin',req.session.utilisateur.id).input('note',commentaire.trim()).query("INSERT INTO Mouvements(equipement_id,utilisateur_id,type_mouvement,note) VALUES(@equipement,@admin,N'Signalement refusé (ancienne fiche)',@note)");
+        await tx.commit();tx=null;return res.json({message:'Ancienne demande refusée avec motif, sans modification d’unité.'});
+      }
       if(decision==='Acceptée') {
         if(!types.includes(s.type_signalement)){await tx.rollback();tx=null;return res.status(409).json({erreur:'Type de signalement non pris en charge.'});}
-        const update=await tx.request().input('equipement',s.equipement_id).input('initial',s.etat_initial).input('etat',s.type_signalement)
-          .query(`UPDATE Equipements SET etat=@etat,
+        const update=await tx.request().input('equipement',s.unite_id).input('initial',s.etat_initial_unite || s.etat_initial).input('etat',s.type_signalement)
+          .query(`UPDATE EquipementsUnitaires SET etat=@etat,
             attribue_a_id=CASE WHEN @etat=N'En réparation' THEN attribue_a_id ELSE NULL END,
             date_attribution=CASE WHEN @etat=N'En réparation' THEN date_attribution ELSE NULL END
             WHERE id=@equipement AND etat=@initial
@@ -71,9 +76,9 @@ module.exports = function enregistrerSignalements(app, connecterBD, verifierConn
       await tx.request().input('id',id).input('decision',decision).input('commentaire',commentaire.trim()).input('admin',req.session.utilisateur.id)
         .query(`UPDATE Signalements SET statut=@decision, commentaire=@commentaire,
           traite_par_id=@admin, date_decision=SYSUTCDATETIME() WHERE id=@id`);
-      await tx.request().input('equipement',s.equipement_id).input('admin',req.session.utilisateur.id)
+      await tx.request().input('equipement',s.unite_id).input('admin',req.session.utilisateur.id)
         .input('type',decision==='Acceptée'?'Signalement accepté':'Signalement refusé').input('note',commentaire.trim())
-        .query('INSERT INTO Mouvements(equipement_id,utilisateur_id,type_mouvement,note) VALUES(@equipement,@admin,@type,@note)');
+        .query('INSERT INTO Mouvements(equipement_id,utilisateur_id,type_mouvement,note,unite_id) VALUES((SELECT equipement_id FROM UnitesEquipement WHERE id=@equipement),@admin,@type,@note,@equipement)');
       await tx.commit();tx=null;res.json({message:'Demande '+decision.toLocaleLowerCase('fr')+'.'});
     } catch(error) {if(tx)await tx.rollback().catch(()=>{});console.error(error);res.status(500).json({erreur:'Impossible d’enregistrer la décision'});}
   });

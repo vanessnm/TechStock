@@ -12,7 +12,7 @@ module.exports = function enregistrerReparations(app, connecterBD, verifierConne
       let tx;
       try {
         const pool=await connecterBD();tx=pool.transaction();await tx.begin();
-        const e=(await tx.request().input('id',id).query('SELECT etat,attribue_a_id,date_attribution FROM Equipements WITH (UPDLOCK,HOLDLOCK) WHERE id=@id')).recordset[0];
+        const e=(await tx.request().input('id',id).query('SELECT etat,attribue_a_id,date_attribution FROM EquipementsUnitaires WITH (UPDLOCK,HOLDLOCK) WHERE id=@id')).recordset[0];
         if(!e || (fin ? e.etat!=='En réparation' : !['Disponible','Attribué'].includes(e.etat))) {
           await tx.rollback();tx=null;return res.status(409).json({erreur:'Cette transition n’est pas autorisée depuis le statut actuel.'});
         }
@@ -26,13 +26,13 @@ module.exports = function enregistrerReparations(app, connecterBD, verifierConne
           if(!fin && e.attribue_a_id!=null && e.attribue_a_id!==user.id){
             await tx.rollback();tx=null;return res.status(403).json({erreur:'Cet équipement est attribué à un autre employé.'});
           }
-          const pending=(await tx.request().input('id',id).query("SELECT TOP 1 id FROM Signalements WITH (UPDLOCK,HOLDLOCK) WHERE equipement_id=@id AND statut=N'En attente'")).recordset;
+          const pending=(await tx.request().input('id',id).query("SELECT TOP 1 id FROM Signalements WITH (UPDLOCK,HOLDLOCK) WHERE (unite_id=@id OR (unite_id IS NULL AND equipement_id=(SELECT equipement_id FROM UnitesEquipement WHERE id=@id))) AND statut=N'En attente'")).recordset;
           if(pending.length){await tx.rollback();tx=null;return res.status(409).json({erreur:'Un signalement est en attente : un administrateur doit le traiter avant ce changement.'});}
         }
-        await tx.request().input('id',id).input('etat',fin?'Disponible':'En réparation').query(fin ? 'UPDATE Equipements SET etat=@etat,attribue_a_id=NULL,date_attribution=NULL WHERE id=@id' : 'UPDATE Equipements SET etat=@etat WHERE id=@id');
+        await tx.request().input('id',id).input('etat',fin?'Disponible':'En réparation').query(fin ? 'UPDATE EquipementsUnitaires SET etat=@etat,attribue_a_id=NULL,date_attribution=NULL WHERE id=@id' : 'UPDATE EquipementsUnitaires SET etat=@etat WHERE id=@id');
         await tx.request().input('id',id).input('user',user.id).input('note',note.trim())
           .input('type',fin ? 'En réparation → Disponible ('+(employe?'employé':'administrateur')+(e.attribue_a_id!=null?'; attribution '+e.attribue_a_id:'')+')' : employe?'Mise en réparation (employé)':'Mise en réparation')
-          .query('INSERT INTO Mouvements(equipement_id,utilisateur_id,type_mouvement,note) VALUES(@id,@user,@type,@note)');
+          .query('INSERT INTO Mouvements(equipement_id,utilisateur_id,type_mouvement,note,unite_id) VALUES((SELECT equipement_id FROM UnitesEquipement WHERE id=@id),@user,@type,@note,@id)');
         await tx.commit();tx=null;
         res.json({message:fin?'Réparation terminée.':'Équipement mis en réparation.'});
       }catch(error){if(tx)await tx.rollback().catch(()=>{});console.error(error);res.status(500).json({erreur:'Impossible d’enregistrer ce changement de statut.'});}
@@ -48,7 +48,7 @@ module.exports = function enregistrerReparations(app, connecterBD, verifierConne
     let tx;
     try{
       const pool=await connecterBD();tx=pool.transaction();await tx.begin();
-      const e=(await tx.request().input('id',id).query('SELECT etat,attribue_a_id,date_attribution FROM Equipements WITH (UPDLOCK,HOLDLOCK) WHERE id=@id')).recordset[0];
+      const e=(await tx.request().input('id',id).query('SELECT etat,attribue_a_id,date_attribution FROM EquipementsUnitaires WITH (UPDLOCK,HOLDLOCK) WHERE id=@id')).recordset[0];
       if(!e||!['Perdu / Volé','Attribué','En attente de retour','En réparation','À remplacer / Hors service'].includes(e.etat)){
         await tx.rollback();tx=null;return res.status(409).json({erreur:'Cet équipement ne peut pas être remis disponible depuis son statut actuel.'});
       }
@@ -61,21 +61,21 @@ module.exports = function enregistrerReparations(app, connecterBD, verifierConne
       if(user.role==='Employé'){
         if(retour&&e.attribue_a_id!==user.id){await tx.rollback();tx=null;return res.status(403).json({erreur:'Seul le détenteur actuel ou un administrateur peut confirmer ce retour.'});}
         if(!retour&&(e.attribue_a_id!=null||e.date_attribution!=null)){await tx.rollback();tx=null;return res.status(409).json({erreur:'Une attribution active doit être traitée par un administrateur.'});}
-        const pending=(await tx.request().input('id',id).query("SELECT TOP 1 id FROM Signalements WITH (UPDLOCK,HOLDLOCK) WHERE equipement_id=@id AND statut=N'En attente'")).recordset;
+        const pending=(await tx.request().input('id',id).query("SELECT TOP 1 id FROM Signalements WITH (UPDLOCK,HOLDLOCK) WHERE (unite_id=@id OR (unite_id IS NULL AND equipement_id=(SELECT equipement_id FROM UnitesEquipement WHERE id=@id))) AND statut=N'En attente'")).recordset;
         if(pending.length){await tx.rollback();tx=null;return res.status(409).json({erreur:'Un signalement est en attente de décision administrative.'});}
       }
-      await tx.request().input('id',id).query("UPDATE Equipements SET etat=N'Disponible',attribue_a_id=NULL,date_attribution=NULL WHERE id=@id");
+      await tx.request().input('id',id).query("UPDATE EquipementsUnitaires SET etat=N'Disponible',attribue_a_id=NULL,date_attribution=NULL WHERE id=@id");
       const type=e.etat+' → Disponible ('+(user.role==='Employé'?'employé':'administrateur')+(e.attribue_a_id!=null?'; attribution '+e.attribue_a_id:'')+')';
       await tx.request().input('id',id).input('user',user.id).input('type',type).input('note',commentaire.trim())
-        .query('INSERT INTO Mouvements(equipement_id,utilisateur_id,type_mouvement,note) VALUES(@id,@user,@type,@note)');
+        .query('INSERT INTO Mouvements(equipement_id,utilisateur_id,type_mouvement,note,unite_id) VALUES((SELECT equipement_id FROM UnitesEquipement WHERE id=@id),@user,@type,@note,@id)');
       await tx.commit();tx=null;res.json({message:retour?'Retour confirmé : attribution retirée et équipement disponible.':'Équipement remis disponible.'});
     }catch(error){if(tx)await tx.rollback().catch(()=>{});console.error(error);res.status(500).json({erreur:'Impossible de remettre cet équipement disponible.'});}
   });
 
   app.get('/api/notifications/reparations',verifierConnexion,verifierAdmin,async(req,res)=>{
     try{
-      const pool=await connecterBD();const rows=await pool.request().query(`SELECT TOP 50 m.id,m.date_mouvement,m.note,m.type_mouvement,e.nom AS equipement_nom,u.nom AS employe_nom
-        FROM Mouvements m JOIN Equipements e ON e.id=m.equipement_id JOIN Utilisateurs u ON u.id=m.utilisateur_id
+      const pool=await connecterBD();const rows=await pool.request().query(`SELECT m.id,m.date_mouvement,m.note,m.type_mouvement,COALESCE(e.nom,ancien.nom)+CASE WHEN e.id IS NULL THEN N' · historique de la fiche, unité non déterminée' ELSE N' · '+COALESCE(e.numero_serie,e.code_interne) END AS equipement_nom,u.nom AS employe_nom
+        FROM Mouvements m LEFT JOIN EquipementsUnitaires e ON e.id=m.unite_id JOIN Equipements ancien ON ancien.id=m.equipement_id JOIN Utilisateurs u ON u.id=m.utilisateur_id
         WHERE m.type_mouvement=N'Mise en réparation (employé)' OR m.type_mouvement LIKE N'%→ Disponible (employé%' ORDER BY m.id DESC`);
       res.json(rows.recordset);
     }catch(error){console.error(error);res.status(500).json({erreur:'Impossible de charger les notifications de réparation.'});}

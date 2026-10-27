@@ -4,7 +4,10 @@
   "description": "Application web de gestion d'inventaire informatique",
   "main": "app.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node app.js",
+    "check": "node tools/verifier-installation.js",
+    "init-admin": "node tools/initialiser-admin.js",
+    "test": "npm run check"
   },
   "repository": {
     "type": "git",

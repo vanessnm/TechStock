@@ -5,7 +5,9 @@ const state = {
   signalements: [],
   validationsEquipements: [],
   notificationsReparation: [],
+  etatsNotifications: {},
   equipments: null,
+  referentiels: {categories:[],emplacements:[]},
   editing: null,
   page: "tableau-de-bord",
   query: "",
@@ -58,6 +60,8 @@ function resetSession(message = "") {
   state.signalements = [];
   state.validationsEquipements = [];
   state.notificationsReparation = [];
+  state.etatsNotifications = {};
+  if (fenetreNotifications?.isConnected) fenetreNotifications.close();
   $("listeSignalements").replaceChildren();
   $("messageSignalements").textContent = "";
   state.equipments = null;
@@ -172,7 +176,8 @@ async function verifierSession() {
 async function chargerInventaire() {
   $("messageInventaire").textContent = "Chargement de l’inventaire…";
   try {
-    const data = await api("/api/equipements");
+    const [data,referentiels] = await Promise.all([api("/api/equipements"),api("/api/referentiels")]);
+    state.referentiels=referentiels;
     if (!Array.isArray(data))
       throw new Error("Le format de l’inventaire est incorrect.");
     state.equipments = data;
@@ -200,7 +205,6 @@ function clearInventory() {
     "barresEmplacements",
     "rapportCategories",
     "rapportEmplacements",
-    "alertes",
     "legendeStatuts",
   ])
     $(id).replaceChildren(node("p", "empty", "Données indisponibles."));
@@ -239,22 +243,20 @@ function group(field) {
   }
   return [...counts].sort((a, b) => b[1] - a[1]);
 }
+function isDisponible(e) { return e.etat === "Disponible" && e.attribue_a_id == null && e.date_attribution == null; }
+function sousSeuil(units) { const map=new Map(); for(const u of units || []) if(isLow(u)) map.set(u.modele_id,u); return [...map.values()]; }
 function isLow(e) {
-  return (
-    e.quantite !== null &&
-    e.quantite !== undefined &&
-    e.seuil_minimum !== null &&
-    e.seuil_minimum !== undefined &&
-    Number.isFinite(Number(e.quantite)) &&
-    Number.isFinite(Number(e.seuil_minimum)) &&
-    Number(e.quantite) < Number(e.seuil_minimum)
-  );
+  const units=(state.equipments || []).filter((u)=>u.modele_id===e.modele_id);
+  const available=units.filter(isDisponible).length;
+  const threshold=Math.max(0,...units.map((u)=>Number(u.seuil_minimum)||0));
+  return available<threshold;
 }
+
 function render() {
   if (!state.equipments) return;
   renderStats();
   renderCategories();
-  renderAlerts();
+  actualiserBadgeSignalements();
   renderStatus();
   renderTables();
   for (const [id, field] of [
@@ -272,6 +274,7 @@ function render() {
     option.value = status;
     $("filtreStatut").append(option);
   }
+  if(selected==="low"){const option=node("option","","Sous le seuil minimum");option.value="low";$("filtreStatut").append(option);}
   $("filtreStatut").value = selected;
 }
 function renderStats() {
@@ -280,7 +283,7 @@ function renderStats() {
     ["Équipements totaux", e.length, "box", "#3eb1f7"],
     [
       "Disponibles",
-      e.filter((x) => x.etat === "Disponible").length,
+      e.filter(isDisponible).length,
       "check",
       "#37ef99",
     ],
@@ -290,7 +293,7 @@ function renderStats() {
       "wrench",
       "#ff464d",
     ],
-    ["Sous le seuil", e.filter(isLow).length, "warning", "#ffbd24"],
+    ["Sous le seuil", sousSeuil(e).length, "warning", "#ffbd24"],
   ];
   $("statistiques").replaceChildren();
   for (const [label, value, icon, color] of stats) {
@@ -352,58 +355,6 @@ function renderCategories() {
     }
   }
 }
-function renderAlerts() {
-  const low = state.equipments.filter(isLow),
-    repair = state.equipments.filter((e) => e.etat === "En réparation"),
-    replace = state.equipments.filter(
-      (e) => e.etat === "À remplacer / Hors service",
-    );
-  $("alertes").replaceChildren();
-  for (const [text, icon, color, status] of [
-    [
-      `${low.length} équipement${low.length > 1 ? "s" : ""} sous le seuil minimal`,
-      "warning",
-      "#ffbd24",
-      "low",
-    ],
-    [
-      `${repair.length} équipement${repair.length > 1 ? "s" : ""} en réparation`,
-      "wrench",
-      "#ff9035",
-      "En réparation",
-    ],
-    [
-      `${replace.length} équipement${replace.length > 1 ? "s" : ""} à remplacer`,
-      "refresh",
-      "#3eb1f7",
-      "À remplacer / Hors service",
-    ],
-  ]) {
-    const row = node("button", "alert-row");
-    row.type = "button";
-    row.style.setProperty("--accent", color);
-    const symbol = node("span");
-    symbol.append(svg(icon));
-    row.append(symbol, node("span", "", text), node("span", "arrow", "›"));
-    row.addEventListener("click", () => {
-      state.status = status;
-      state.query = "";
-      $("recherche").value = "";
-      location.hash = "inventaire";
-      renderTables();
-    });
-    $("alertes").append(row);
-  }
-  $("alertes").append(
-    node(
-      "p",
-      "empty",
-      "Garanties et durée des réparations : données non disponibles.",
-    ),
-  );
-  const count = low.length + repair.length + replace.length;
-  actualiserBadgeSignalements(count);
-}
 function renderStatus() {
   const entries = group("etat");
   const total = state.equipments.length;
@@ -457,7 +408,7 @@ function matching() {
     (e) =>
       (!state.status ||
         (state.status === "low" ? isLow(e) : e.etat === state.status)) &&
-      [e.nom, e.categorie, e.emplacement, e.numero_serie].some((value) =>
+      [e.nom, e.categorie, e.emplacement, e.numero_serie, e.code_interne].some((value) =>
         String(value || "")
           .toLocaleLowerCase("fr")
           .includes(state.query.toLocaleLowerCase("fr")),
@@ -475,12 +426,85 @@ function formattedDate(e) {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? "—" : date.toLocaleDateString("fr-CA");
 }
+function regrouperUnites(units) {
+  const groups=new Map();
+  for(const unit of units){
+    const key=unit.modele_id+"|"+unit.etat;
+    if(!groups.has(key))groups.set(key,{...unit,id:"g-"+key,unites:[],quantite:0});
+    const group=groups.get(key);group.unites.push(unit);group.quantite++;
+  }
+  return [...groups.values()].map((group)=>({...group,
+    numero_serie:group.unites.length===1 ? group.unites[0].numero_serie || group.unites[0].code_interne : group.unites.length+" unités — choisir pour agir",
+    emplacement:new Set(group.unites.map((u)=>u.emplacement)).size>1 ? "Emplacements multiples" : group.emplacement,
+  }));
+}
+function afficherNumerosSerie(group) {
+  const dialog = node("dialog", "assignment-dialog");
+  dialog.setAttribute("aria-label", "Numéros de série — " + group.nom);
+  const title = node("h2", "", "Numéros de série — " + group.nom);
+  const list = node("ul");
+  for (const unit of group.unites) {
+    list.append(node("li", "", (unit.numero_serie || "N° de série non renseigné") + " — " + unit.code_interne));
+  }
+  const close = node("button", "action-button", "Fermer");
+  close.type = "button";
+  close.addEventListener("click", () => dialog.close());
+  dialog.addEventListener("close", () => dialog.remove(), { once: true });
+  dialog.append(title, list, close);
+  document.body.append(dialog);
+  dialog.showModal();
+}
+
+function choisirUnite(group, run) {
+  const user=state.user;
+  const dialog=node("dialog","assignment-dialog");
+  const title=node("h2","",group.nom+" · choisir l’unité");title.id="titreChoixUnite";
+  dialog.setAttribute("aria-labelledby",title.id);
+  const label=node("label","","Unité concernée");
+  const select=node("select");select.required=true;
+  const empty=node("option","","Sélectionner une unité…");empty.value="";select.append(empty);
+  for(const unit of group.unites){
+    const option=node("option","",(unit.numero_serie || "N° de série non renseigné")+" · "+unit.code_interne+" · "+unit.etat);
+    option.value=unit.id;select.append(option);
+  }
+  label.append(select);
+  const actions=node("div","form-actions");
+  const next=node("button","action-button","Continuer");next.type="button";next.disabled=true;
+  const history=node("button","action-button","Historique de l’unité");history.type="button";history.disabled=true;
+  const cancel=node("button","action-button","Annuler");cancel.type="button";
+  const message=node("p");message.setAttribute("role","status");
+  select.addEventListener("change",()=>{next.disabled=history.disabled=!select.value;});
+  next.addEventListener("click",()=>{
+    if(state.user!==user){dialog.close();return;}
+    const unit=state.equipments?.find((u)=>u.id===Number(select.value));
+    if(!unit){message.textContent="Unité indisponible. Actualisez l’inventaire.";return;}
+    dialog.close();run(unit);
+  });
+  history.addEventListener("click",()=>{if(select.value)ouvrirHistoriqueUnite(Number(select.value));});
+  cancel.addEventListener("click",()=>dialog.close());
+  dialog.addEventListener("close",()=>dialog.remove(),{once:true});
+  actions.append(next,history,cancel);dialog.append(title,label,message,actions);document.body.append(dialog);dialog.showModal();
+}
+async function ouvrirHistoriqueUnite(id){
+  const user=state.user;const dialog=node("dialog","assignment-dialog");
+  dialog.setAttribute("aria-label","Historique de l’unité");
+  const title=node("h2","","Historique de l’unité");const content=node("div");content.append(node("p","","Chargement…"));
+  const close=node("button","action-button","Fermer");close.type="button";close.addEventListener("click",()=>dialog.close());
+  dialog.addEventListener("close",()=>dialog.remove(),{once:true});dialog.append(title,content,close);document.body.append(dialog);dialog.showModal();
+  try{const rows=await api(`/api/equipements/${id}/historique`);if(state.user!==user){dialog.close();return;}if(!dialog.isConnected)return;content.replaceChildren();
+    for(const [label,list] of [["Mouvements de cette unité",rows.unite],["Historique antérieur de la fiche — non réparti entre les unités",rows.ancienne_fiche]]){
+      content.append(node("h3","",label));if(!list.length)content.append(node("p","empty","Aucun mouvement."));
+      for(const m of list)content.append(node("p","report-description",new Date(m.date_mouvement).toLocaleString("fr-CA")+" · "+m.auteur+" · "+m.type_mouvement+(m.note?" · "+m.note:"")));
+    }
+  }catch(error){content.replaceChildren(node("p","",error.message));}
+}
+
 function renderTables() {
   const data = matching();
   $("nombreResultats").textContent =
-    `${data.length} équipement${data.length > 1 ? "s" : ""}`;
-  drawTable("listeEquipements", data, false);
-  const recent = [...(state.equipments || [])]
+    `${data.length} unité${data.length > 1 ? "s" : ""} · ${regrouperUnites(data).length} groupe(s)`;
+  drawTable("listeEquipements", regrouperUnites(data), false);
+  const recent = regrouperUnites(state.equipments || [])
     .sort((a, b) => {
       const da = Date.parse(dateValue(a)),
         db = Date.parse(dateValue(b));
@@ -505,8 +529,18 @@ function drawTable(id, equipments, recent) {
   }
   for (const e of equipments) {
     const row = node("tr");
-    for (const value of [e.nom, e.categorie, e.numero_serie, e.emplacement])
-      row.append(node("td", "", value ?? "—"));
+    row.append(node("td", "", e.nom ?? "—"), node("td", "", e.categorie ?? "—"));
+    const serialCell = node("td");
+    if (e.unites?.length > 1) {
+      const link = node("a", "serial-numbers-link", "Voir les numéros de série");
+      link.href = "#";
+      link.addEventListener("click", (event) => {
+        event.preventDefault();
+        afficherNumerosSerie(e);
+      });
+      serialCell.append(link);
+    } else serialCell.textContent = e.numero_serie ?? "—";
+    row.append(serialCell, node("td", "", e.emplacement ?? "—"));
     const status = node("td"),
       badge = node("span", "badge", e.etat || "Non renseigné");
     badge.style.setProperty("--badge", statusColor(e.etat));
@@ -518,7 +552,7 @@ function drawTable(id, equipments, recent) {
     if (!recent) {
       const actions = node("td");
       const menu = node("select", "action-button equipment-actions");
-      menu.setAttribute("aria-label", `Actions pour ${e.nom}`);
+      menu.setAttribute("aria-label", `Actions pour ${e.nom} — ${e.etat}`);
       const placeholder = node("option", "", "Select");
       placeholder.value = "";
       placeholder.hidden = true;
@@ -545,6 +579,12 @@ function drawTable(id, equipments, recent) {
 }
 // Les mêmes choix restent visibles; chaque exécution contrôle les permissions.
 function equipmentActions(e) {
+  if (e.unites) return equipmentActions(e.unites[0]).map((action) => ({...action,
+    run: () => choisirUnite(e, (unit) => {
+      const current = equipmentActions(unit).find((item) => item.id === action.id);
+      if (current) current.run(); else afficherMessageAction("Cette action ne s’applique plus à l’unité sélectionnée.");
+    }),
+  }));
   const actions = [
     { id: "modifier", label: "Modifier", run: () => {
       state.editing = e;
@@ -585,7 +625,7 @@ function raisonRefusDisponible(e) {
     return "Cet équipement est « À remplacer / Hors service ». Seul un administrateur peut le remettre en service au statut Disponible. Aucun changement enregistré.";
   if (e.etat === "En attente de validation")
     return "Cet équipement attend sa validation par un administrateur. Un employé ne peut pas le rendre Disponible. Aucun changement enregistré.";
-  if (state.signalements.some((s) => s.equipement_id === e.id && s.statut === "En attente"))
+  if (state.signalements.some((s) => (s.equipement_id === e.id || (s.unite_id == null && s.equipement_origine_id === e.equipement_origine_id)) && s.statut === "En attente"))
     return "Un signalement est en attente. Un administrateur doit le traiter avant le retour à Disponible. Aucun changement enregistré.";
   if (e.attribue_a_id != null && e.attribue_a_id !== state.user?.id)
     return "Cet équipement est attribué à un autre employé. Son détenteur ou un administrateur doit confirmer le retour. Aucun changement enregistré.";
@@ -873,16 +913,15 @@ $("filtreStatut").addEventListener("change", () => {
 $("notifications").addEventListener("click", () => {
   location.hash = "tableau-de-bord";
   afficherPage();
-  marquerNotificationsReparationLues();
-  marquerValidationsLues();
+
   chargerSignalements();
-  $("carteSignalements").scrollIntoView({ behavior: "smooth", block: "center" });
+  ouvrirToutesNotifications();
 });
 // Transitions exposées par les routes métier actuelles de app.js.
 function statusTransitions(e) {
   if (state.user?.role === "Employé") {
     const transitions = [];
-    const pending = state.signalements.some((s) => s.equipement_id === e.id && s.statut === "En attente");
+    const pending = state.signalements.some((s) => (s.equipement_id === e.id || (s.unite_id == null && s.equipement_origine_id === e.equipement_origine_id)) && s.statut === "En attente");
     const retour = ["Attribué","En attente de retour"].includes(e.etat);
     if (!pending && e.etat === "En réparation" && (e.attribue_a_id == null || e.attribue_a_id === state.user.id))
       transitions.push({status:"Disponible",route:"reparation/fin",field:"resolution",label:"Commentaire (facultatif)",returnRequired:true});
@@ -1014,6 +1053,8 @@ function selectedStatusChange(edit) {
 function prepareEquipmentForm() {
   const form = $("formEquipement");
   form.reset();
+  form.elements.quantite.readOnly=!!state.editing;
+  $("champSeriesUnites").hidden=!!state.editing;
   prepareStatusField();
   $("messageEquipement").textContent = "";
   $("titreFormulaire").textContent = state.editing
@@ -1039,6 +1080,7 @@ function prepareEquipmentForm() {
     for (const e of state.equipments || [])
       if (e[field] != null)
         refs.set(String(e[field]), String(e[label] || e[field]));
+    for(const ref of (field==="categorie_id"?state.referentiels.categories:state.referentiels.emplacements))refs.set(String(ref.id),ref.nom);
     for (const [id, name] of refs) {
       const option = node("option", "", name);
       option.value = id;
@@ -1050,8 +1092,8 @@ function prepareEquipmentForm() {
     form.elements.emplacement_id.options.length > 1;
   form.querySelector('[type="submit"]').disabled = !available;
   $("infoReferentiels").textContent = available
-    ? "Les catégories et emplacements sont ceux des équipements existants."
-    : "Ajout indisponible : aucun référentiel de catégories ou d’emplacements n’est accessible. Le backend ne propose pas de route pour les charger séparément.";
+    ? "Les catégories et emplacements disponibles sont chargés depuis les référentiels."
+    : "Ajout indisponible : aucune catégorie ou aucun emplacement actif n’est disponible.";
   if (state.editing)
     for (const key of [
       "nom",
@@ -1162,35 +1204,23 @@ $("formUtilisateur").addEventListener("submit", async (event) => {
   }
 });
 
-function validationsLues() {
-  try {return Number(localStorage.getItem("techstock-validations-lues-" + state.user?.id)) || 0;} catch {return 0;}
+function cleNotification(source, report) {
+  const code = {"En attente":"P", "Acceptée":"A", "Refusée":"R"}[report.statut];
+  return source === "i" ? "i:" + report.id : source + ":" + report.id + ":" + code + (source === "v" ? ":" + (report.decision_id || 0) : "");
 }
-function marquerValidationsLues() {
-  if (state.user?.role !== "Employé") return;
-  const id=Math.max(validationsLues(),...state.validationsEquipements.map((v)=>v.decision_id || 0));
-  try {localStorage.setItem("techstock-validations-lues-"+state.user.id,String(id));} catch {}
-  actualiserBadgeSignalements();
+function toutesNotifications() {
+  const entries = [
+    ...state.notificationsReparation.map(report=>({source:"i",report,date:report.date_mouvement})),
+    ...state.signalements.map(report=>({source:"s",report,date:report.date_decision || report.date_signalement})),
+    ...state.validationsEquipements.map(report=>({source:"v",report,date:report.date_decision || report.date_signalement})),
+  ];
+  return entries.map(item=>({...item,cle:cleNotification(item.source,item.report)})).sort((a,b)=>(Date.parse(b.date)||0)-(Date.parse(a.date)||0)||b.cle.localeCompare(a.cle));
 }
-function notificationsReparationLues() {
-  try { return Number(localStorage.getItem("techstock-reparations-lues-" + state.user?.id)) || 0; } catch { return 0; }
-}
-function marquerNotificationsReparationLues() {
-  if (state.user?.role !== "Administrateur") return;
-  const id = Math.max(notificationsReparationLues(), ...state.notificationsReparation.map((n) => n.id));
-  try { localStorage.setItem("techstock-reparations-lues-" + state.user.id, String(id)); } catch {}
-  actualiserBadgeSignalements();
-}
-function actualiserBadgeSignalements(inventoryCount) {
-  const equipments = state.equipments || [];
-  const alerts = inventoryCount ?? equipments.filter(isLow).length + equipments.filter((e) =>
-    ["En réparation", "À remplacer / Hors service"].includes(e.etat)).length;
-  const pending = state.user?.role === "Administrateur"
-    ? [...state.signalements,...state.validationsEquipements].filter((s) => s.statut === "En attente").length : 0;
-  const unread = state.user?.role === "Administrateur" ? state.notificationsReparation.filter((n) => n.id > notificationsReparationLues()).length : 0;
-  const decisions = state.user?.role === "Employé" ? state.validationsEquipements.filter((v) => v.statut !== "En attente" && v.decision_id > validationsLues()).length : 0;
-  $("badgeAlertes").textContent = alerts + pending + unread + decisions;
-  $("badgeAlertes").hidden = alerts + pending + unread + decisions === 0;
-  $("notifications").title = pending + " signalement(s) en attente · " + alerts + " alerte(s) d’inventaire · " + unread + " notification(s) informative(s) · " + decisions + " décision(s) de validation";
+function actualiserBadgeSignalements() {
+  const unread=toutesNotifications().filter(n=>{const e=state.etatsNotifications[n.cle] || {};return !e.lue&&!e.archivee&&!e.retiree;}).length;
+  $("badgeAlertes").textContent=unread;
+  $("badgeAlertes").hidden=unread===0;
+  $("notifications").title=unread+" notification(s) non lue(s)";
 }
 let chargementSignalements = false;
 async function chargerSignalements() {
@@ -1198,9 +1228,9 @@ async function chargerSignalements() {
   const user = state.user;
   chargementSignalements = true;
   try {
-    const [rows, informations, validations] = await Promise.all([
+    const [rows, informations, validations, etats] = await Promise.all([
       api("/api/signalements"), user.role === "Administrateur" ? api("/api/notifications/reparations") : Promise.resolve([]),
-      api("/api/validations-equipements"),
+      api("/api/validations-equipements"), api("/api/notifications/etats"),
     ]);
     if (state.user !== user) return;
     if (!Array.isArray(rows)) throw new Error("Le format des signalements est incorrect.");
@@ -1209,6 +1239,7 @@ async function chargerSignalements() {
     state.validationsEquipements = validations.map((v) => ({...v,validationEquipement:true}));
     state.signalements = rows;
     state.notificationsReparation = informations;
+    state.etatsNotifications = etats;
     $("messageSignalements").textContent = "";
     afficherSignalements();
     actualiserBadgeSignalements();
@@ -1217,47 +1248,86 @@ async function chargerSignalements() {
     if (state.user === user) $("messageSignalements").textContent = error.message;
   } finally { chargementSignalements = false; }
 }
-function afficherSignalements() {
-  const container = $("listeSignalements");
-  container.replaceChildren();
-  const pending = state.signalements.filter((s) => s.statut === "En attente").length;
-  $("nombreSignalements").textContent = pending ? "· " + pending + " en attente" : "";
-  if (state.user?.role === "Administrateur" && state.notificationsReparation.length) {
-    container.append(node("h3", "", "Informations — sans approbation"));
-    for (const info of state.notificationsReparation) {
-      const article = node("article", "report-item");
-      article.append(node("h3", "", info.equipement_nom), node("p", "", info.employe_nom + " · " + new Date(info.date_mouvement).toLocaleString("fr-CA")),
-        node("p", "report-description", info.note), node("p", "", (info.type_mouvement || "Mise en réparation") + " — aucune approbation requise."));
-      container.append(article);
-    }
-    container.append(node("h3", "", "Demandes d’approbation"));
-  }
-  if (!state.signalements.length && !state.validationsEquipements.length) container.append(node("p", "empty", "Aucun signalement."));
-  for (const report of [...state.validationsEquipements,...state.signalements]) {
-    const article = node("article", "report-item");
-    article.append(node("h3", "", report.equipement_nom));
-    const date = new Date(report.date_signalement);
-    article.append(node("p", "", report.employe_nom + " · " + report.type_signalement));
-    article.append(node("p", "", "Signalé le " + date.toLocaleString("fr-CA") + " · " + report.statut));
-    article.append(node("p", "report-description", report.description));
-    if (report.statut !== "En attente") {
-      article.append(node("p", "", "Décision : " + report.statut +
-        (report.administrateur_nom ? " · " + report.administrateur_nom : "")));
-      if (report.commentaire) article.append(node("p", "report-description", report.commentaire));
-    }
-    if (state.user?.role === "Administrateur" && report.statut === "En attente") {
-      const buttons = node("div", "form-actions");
-      for (const [label, decision] of [["Accepter", "Acceptée"], ["Refuser", "Refusée"]]) {
-        const button = node("button", "action-button", label);
-        button.type = "button";
-        button.addEventListener("click", () => report.validationEquipement ? ouvrirDecisionValidation(report, decision) : ouvrirDecisionSignalement(report, decision));
-        buttons.append(button);
-      }
-      article.append(buttons);
-    }
-    container.append(article);
-  }
+let fenetreNotifications = null;
+async function changerEtatNotification(item, action, button, message) {
+  const user=state.user;button.disabled=true;
+  try {
+    const result=await api("/api/notifications/etat",jsonRequest("PUT",{cle:item.cle,action}));
+    if(state.user!==user)return;
+    state.etatsNotifications[result.cle]=result.etat;
+    afficherSignalements();actualiserBadgeSignalements();
+  } catch(error) { if(state.user===user)message.textContent=error.message; }
+  finally {button.disabled=false;}
 }
+function carteNotification(item) {
+  const report=item.report, etat=state.etatsNotifications[item.cle] || {};
+  const article=node("article","report-item");
+  article.append(node("h3","",report.equipement_nom));
+  article.append(node("p","",etat.retiree?"Retirée de l’affichage":etat.archivee?"Archivée":etat.lue?"Lue":"Non lue"));
+  if(item.source==="i") {
+    article.append(node("p","",report.employe_nom+" · "+new Date(item.date).toLocaleString("fr-CA")),node("p","report-description",report.note),node("p","",(report.type_mouvement || "Mise en réparation")+" — aucune approbation requise."));
+  } else {
+    article.append(node("p","",report.employe_nom+" · "+report.type_signalement),node("p","","Signalé le "+new Date(report.date_signalement).toLocaleString("fr-CA")+" · "+report.statut),node("p","report-description",report.description));
+    if(report.statut!=="En attente") {
+      article.append(node("p","","Décision : "+report.statut+(report.administrateur_nom?" · "+report.administrateur_nom:"")));
+      if(report.commentaire)article.append(node("p","report-description",report.commentaire));
+    }
+    if(state.user?.role==="Administrateur"&&report.statut==="En attente") {
+      const decisions=node("div","form-actions");
+      for(const [label,decision]of [["Accepter","Acceptée"],["Refuser","Refusée"]]) {
+        const button=node("button","action-button",label);button.type="button";
+        button.addEventListener("click",()=>report.validationEquipement?ouvrirDecisionValidation(report,decision):ouvrirDecisionSignalement(report,decision));decisions.append(button);
+      }
+      article.append(decisions);
+    }
+  }
+  const actions=node("div","form-actions"),message=node("p");message.setAttribute("role","status");
+  const options=etat.archivee||etat.retiree?[["Réafficher","restaurer"]]:[["Marquer comme lue","lire"],["Archiver","archiver"],["Retirer de l’affichage","retirer"]];
+  for(const [label,action]of options) {
+    const button=node("button","action-button",label);button.type="button";button.disabled=action==="lire"&&!!etat.lue;
+    button.addEventListener("click",()=>changerEtatNotification(item,action,button,message));actions.append(button);
+  }
+  article.append(actions,message);return article;
+}
+function afficherSignalements() {
+  const entries=toutesNotifications(),container=$("listeSignalements");container.replaceChildren();
+  const pending=[...state.signalements,...state.validationsEquipements].filter(s=>s.statut==="En attente").length;
+  $("nombreSignalements").textContent=pending?"· "+pending+" en attente":"";
+  const visible=entries.filter(item=>{const e=state.etatsNotifications[item.cle] || {};return !e.archivee&&!e.retiree;}).slice(0,3);
+  for(const item of visible)container.append(carteNotification(item));
+  if(!visible.length)container.append(node("p","empty","Aucune notification à afficher."));
+  if(fenetreNotifications?.isConnected)rafraichirToutesNotifications();
+}
+function rafraichirToutesNotifications() {
+  const dialog=fenetreNotifications,select=dialog.querySelector("select"),container=dialog.querySelector(".notifications-list");container.replaceChildren();
+  const entries=toutesNotifications().filter(item=>{const e=state.etatsNotifications[item.cle] || {};return select.value==="toutes"||select.value==="attente"&&item.source!=="i"&&item.report.statut==="En attente"||select.value==="archivees"&&e.archivee||select.value==="retirees"&&e.retiree||select.value==="actives"&&!e.archivee&&!e.retiree;});
+  for(const item of entries)container.append(carteNotification(item));
+  if(!entries.length)container.append(node("p","empty","Aucune notification dans cette liste."));
+}
+function ouvrirToutesNotifications(filtre="toutes") {
+  if(!state.user)return;
+  if(fenetreNotifications?.isConnected){fenetreNotifications.querySelector("select").value=filtre;rafraichirToutesNotifications();return;}
+  const dialog=node("dialog","assignment-dialog notifications-dialog");fenetreNotifications=dialog;
+  dialog.setAttribute("aria-label","Toutes les notifications");
+  const label=node("label","","Afficher"),select=node("select");
+  for(const [value,text]of [["toutes","Toutes"],["actives","Actives"],["archivees","Archivées"],["retirees","Retirées"]]){const option=node("option","",text);option.value=value;select.append(option);}
+  const pendingOption=node("option","",state.user.role==="Administrateur"?"Demandes à traiter":"Mes demandes en attente");pendingOption.value="attente";select.append(pendingOption);select.value=filtre;
+  select.addEventListener("change",rafraichirToutesNotifications);label.append(select);
+  const content=node("div","notifications-list");
+  dialog.addEventListener("close",()=>{dialog.remove();if(fenetreNotifications===dialog)fenetreNotifications=null;},{once:true});
+  const header=node("div","notifications-dialog-header"),cross=node("button","action-button notifications-close","×");
+  cross.type="button";cross.setAttribute("aria-label","Fermer les notifications");cross.title="Fermer";
+  cross.addEventListener("click",()=>dialog.close());
+  header.append(node("h2","","Toutes les notifications"),cross);
+  dialog.addEventListener("cancel",event=>{event.preventDefault();dialog.close();});
+  dialog.addEventListener("click",event=>{
+    if(event.target!==dialog)return;
+    const rect=dialog.getBoundingClientRect();
+    if(event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom)dialog.close();
+  });
+  dialog.append(header,label,content);document.body.append(dialog);rafraichirToutesNotifications();dialog.showModal();
+}
+$("voirToutesNotifications").addEventListener("click",event=>{event.preventDefault();ouvrirToutesNotifications();});
 function fenetreSignalement(titleText, labelText, required, confirmText, save) {
   const user = state.user;
   const dialog = node("dialog", "assignment-dialog");
@@ -1339,6 +1409,15 @@ function ouvrirDecisionValidation(e, decision) {
 }
 function ouvrirDecisionSignalement(report, decision) {
   if (state.user?.role !== "Administrateur") return;
+  if (decision === "Acceptée" && report.unite_id == null) {
+    const units=(state.equipments || []).filter((u)=>u.equipement_origine_id===report.equipement_origine_id);
+    if(!units.length){afficherMessageAction("Les unités de cette ancienne demande sont indisponibles.");return;}
+    choisirUnite({nom:report.equipement_nom,unites:units},async(unit)=>{
+      try{await api(`/api/signalements/${report.id}/unite`,jsonRequest("PUT",{unite_id:unit.id}));
+        ouvrirDecisionSignalement({...report,unite_id:unit.id,equipement_id:unit.id},decision);
+      }catch(error){afficherMessageAction(error.message);}
+    });return;
+  }
   fenetreSignalement((decision === "Acceptée" ? "Accepter" : "Refuser") + " · " + report.equipement_nom,
     decision === "Refusée" ? "Motif du refus (obligatoire)" : "Commentaire (facultatif)",
     decision === "Refusée", "Confirmer",

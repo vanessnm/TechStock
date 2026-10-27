@@ -4,8 +4,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>TechStock — Inventaire. Simplement.</title>
-    <link rel="stylesheet" href="style.css" />
-    <script defer src="script.js?v=6381c87bd486"></script>
+    <link rel="stylesheet" href="style.css?v=667b6b784d76" />
+    <script defer src="script.js?v=991bccef1f04"></script>
   </head>
   <body>
     <section id="sectionConnexion" class="login">
@@ -89,7 +89,8 @@
               type="search"
               placeholder="Rechercher un équipement, une catégorie, un emplacement, un numéro de série…"
               aria-label="Rechercher dans l’inventaire" /></label
-          ><button
+          >
+          <div class="topbar-actions"><button
             id="notifications"
             class="icon-button"
             aria-label="Voir les alertes"
@@ -106,6 +107,7 @@
           <button id="btnDeconnexion" class="logout">
             <span data-icon="logout"></span>Déconnexion
           </button>
+        </div>
         </header>
         <main>
           <p id="messageInventaire" role="status" class="message"></p>
@@ -146,9 +148,10 @@
                     </div>
                   </div>
                   <div class="hero-photo" aria-hidden="true"></div>
+                  <div class="hero-tagline"><span>Performance.</span><span>Organisation.</span><span>Sérénité.</span></div>
                 </section>
                 <div id="statistiques" class="stats"></div>
-                <section class="card">
+                <section class="card dashboard-categories">
                   <div class="card-heading">
                     <h2>Catégories</h2>
                     <a href="#categories">Voir toutes les catégories →</a>
@@ -178,13 +181,6 @@
                 </section>
               </div>
               <div class="dashboard-side">
-                <section class="card" id="carteAlertes">
-                  <div class="card-heading">
-                    <h2>Alertes et actions</h2>
-                    <a href="#inventaire">Voir tout →</a>
-                  </div>
-                  <div id="alertes"></div>
-                </section>
                 <section class="card analysis">
                   <div class="card-heading">
                     <h2>Analyse rapide</h2>
@@ -217,8 +213,8 @@
                     <div id="legendeStatuts"></div>
                   </div>
                 </section>
-                <section class="card" id="carteSignalements">
-                  <div class="card-heading"><h2>Signalements d’équipements <span id="nombreSignalements"></span></h2></div>
+                <section class="card" id="carteSignalements" hidden>
+                  <div class="card-heading"><h2>Signalements d’équipements <span id="nombreSignalements"></span></h2><a href="#" id="voirToutesNotifications">Voir tout</a></div>
                   <p id="messageSignalements" role="status"></p>
                   <div id="listeSignalements"></div>
                 </section>
@@ -273,7 +269,6 @@
                 ><label
                   >Numéro de série<input
                     name="numero_serie"
-                    required
                     maxlength="255" /></label
                 ><label
                   >Catégorie<select
@@ -314,6 +309,7 @@
                 ><label class="wide"
                   >Description<textarea name="description" rows="4"></textarea>
                 </label>
+                <label class="wide" id="champSeriesUnites">Numéros de série des autres unités (un par ligne, facultatifs)<textarea name="numeros_serie" rows="3"></textarea></label>
                 <p class="wide empty" id="infoReferentiels"></p>
                 <div class="wide form-actions">
                   <button type="submit" class="primary">Enregistrer</button

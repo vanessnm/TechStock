@@ -10,6 +10,7 @@ const app = express();
 app.use(express.json());
 
 app.use(session({
+    name: "techstock.sid",
     secret: process.env.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
@@ -152,118 +153,7 @@ app.post('/api/deconnexion', (req, res) => {
 // ========================================
 
 
-// RÉCUPÉRER LES ÉQUIPEMENTS
-app.get('/api/equipements', verifierConnexion, async (req, res) => {
-    try {
-        const pool = await connecterBD();
-
-       const resultat = await pool.request().query(`
-    SELECT
-        e.*,
-        c.nom AS categorie,
-        em.nom AS emplacement
-    FROM Equipements e
-    INNER JOIN Categories c
-        ON e.categorie_id = c.id
-    INNER JOIN Emplacements em
-        ON e.emplacement_id = em.id
-`);
-
-        res.json(resultat.recordset);
-
-    } catch (erreur) {
-        console.error(erreur);
-
-        res.status(500).json({
-            erreur: 'Impossible de récupérer les équipements'
-        });
-    }
-});
-
-
-// AJOUTER UN ÉQUIPEMENT
-app.post('/api/equipements', verifierConnexion, async (req, res) => {
-    try {
-        if (!['Administrateur', 'Employé'].includes(req.session.utilisateur.role)) {
-            return res.status(403).json({ erreur: 'Création non autorisée' });
-        }
-        // Le statut initial et les données de gestion sont toujours fixés par le serveur.
-        if (req.session.utilisateur.role === 'Employé' &&
-            ['etat','statut','attribue_a_id','utilisateur_id','date_attribution','valide_par_id','date_validation','ajoute_par_id'].some((key) => Object.prototype.hasOwnProperty.call(req.body, key))) {
-            return res.status(403).json({ erreur: 'La création ne permet pas de choisir un statut, une attribution ou une validation.' });
-        }
-
-        const {
-            nom,
-            description,
-            numero_serie,
-            categorie_id,
-            quantite,
-            prix,
-            emplacement_id,
-            seuil_minimum
-        } = req.body;
-        const etatNouvelEquipement =
-    req.session.utilisateur.role === 'Administrateur'
-        ? 'Disponible'
-        : 'En attente de validation';
-
-        const pool = await connecterBD();
-
-        await pool.request()
-            .input('ajoute_par_id', req.session.utilisateur.id)
-            .input('nom', nom)
-            .input('description', description)
-            .input('numero_serie', numero_serie)
-            .input('categorie_id', categorie_id)
-            .input('quantite', quantite)
-            .input('prix', prix)
-            .input('etat', etatNouvelEquipement)
-            .input('emplacement_id', emplacement_id)
-            .input('seuil_minimum', seuil_minimum)
-            .query(`
-                INSERT INTO Equipements
-                (
-                    nom,
-                    ajoute_par_id,
-                    description,
-                    numero_serie,
-                    categorie_id,
-                    quantite,
-                    prix,
-                    etat,
-                    emplacement_id,
-                    seuil_minimum
-                )
-                VALUES
-                (
-                    @nom,
-                    @ajoute_par_id,
-                    @description,
-                    @numero_serie,
-                    @categorie_id,
-                    @quantite,
-                    @prix,
-                    @etat,
-                    @emplacement_id,
-                    @seuil_minimum
-                )
-            `);
-
-        res.status(201).json({
-            message: 'Équipement ajouté avec succès'
-        });
-
-    } catch (erreur) {
-        console.error(erreur);
-
-        res.status(500).json({
-            erreur: 'Impossible d’ajouter l’équipement'
-        });
-    }
-});
-
-// Validation des ajouts : src/validations-equipements.js
+require('./src/unites-crud')(app, connecterBD, verifierConnexion, verifierAdmin);
 
 // ATTRIBUER UN ÉQUIPEMENT À UN EMPLOYÉ
 app.put(
@@ -307,7 +197,7 @@ app.put(
                     .input('id', id)
                     .input('utilisateur_id', utilisateur_id)
                     .query(`
-                        UPDATE Equipements
+                        UPDATE EquipementsUnitaires
                         SET
                             etat = 'Attribué',
                             attribue_a_id = @utilisateur_id,
@@ -334,10 +224,7 @@ app.put(
                         `Équipement attribué à l’utilisateur ${utilisateur_id}`
                     )
                     .query(`
-                        INSERT INTO Mouvements
-                            (equipement_id, utilisateur_id, type_mouvement, note)
-                        VALUES
-                            (@equipement_id, @utilisateur_id, @type_mouvement, @note)
+                        INSERT INTO Mouvements(equipement_id,utilisateur_id,type_mouvement,note,unite_id) VALUES((SELECT equipement_id FROM UnitesEquipement WHERE id=@equipement_id),@utilisateur_id,@type_mouvement,@note,@equipement_id)
                     `);
 
                 await transaction.commit();
@@ -378,7 +265,7 @@ app.put(
                 .input('id', id)
                 .input('utilisateur_id', req.session.utilisateur.id)
                 .query(`
-                    UPDATE Equipements
+                    UPDATE EquipementsUnitaires
                     SET etat = 'En attente de retour'
                     WHERE id = @id
                       AND etat = 'Attribué'
@@ -398,20 +285,7 @@ app.put(
                 .input('type_mouvement', 'Retour signalé')
                 .input('note', 'Retour de l’équipement signalé par l’employé')
                 .query(`
-                    INSERT INTO Mouvements
-                    (
-                        equipement_id,
-                        utilisateur_id,
-                        type_mouvement,
-                        note
-                    )
-                    VALUES
-                    (
-                        @equipement_id,
-                        @utilisateur_id,
-                        @type_mouvement,
-                        @note
-                    )
+                    INSERT INTO Mouvements(equipement_id,utilisateur_id,type_mouvement,note,unite_id) VALUES((SELECT equipement_id FROM UnitesEquipement WHERE id=@equipement_id),@utilisateur_id,@type_mouvement,@note,@equipement_id)
                 `);
 
             res.json({
@@ -448,7 +322,7 @@ app.put(
             const resultat = await pool.request()
                 .input('id', id)
                 .query(`
-                    UPDATE Equipements
+                    UPDATE EquipementsUnitaires
                     SET
                         etat = 'Disponible',
                         attribue_a_id = NULL,
@@ -470,20 +344,7 @@ app.put(
                 .input('type_mouvement', 'Retour confirmé')
                 .input('note', commentaire.trim())
                 .query(`
-                    INSERT INTO Mouvements
-                    (
-                        equipement_id,
-                        utilisateur_id,
-                        type_mouvement,
-                        note
-                    )
-                    VALUES
-                    (
-                        @equipement_id,
-                        @utilisateur_id,
-                        @type_mouvement,
-                        @note
-                    )
+                    INSERT INTO Mouvements(equipement_id,utilisateur_id,type_mouvement,note,unite_id) VALUES((SELECT equipement_id FROM UnitesEquipement WHERE id=@equipement_id),@utilisateur_id,@type_mouvement,@note,@equipement_id)
                 `);
 
             res.json({
@@ -528,7 +389,7 @@ app.put(
             const resultat = await pool.request()
                 .input('id', id)
                 .query(`
-                    UPDATE Equipements
+                    UPDATE EquipementsUnitaires
                     SET
                         etat = 'À remplacer / Hors service',
                         attribue_a_id = NULL,
@@ -555,20 +416,7 @@ app.put(
                 .input('type_mouvement', 'Hors service')
                 .input('note', raison.trim())
                 .query(`
-                    INSERT INTO Mouvements
-                    (
-                        equipement_id,
-                        utilisateur_id,
-                        type_mouvement,
-                        note
-                    )
-                    VALUES
-                    (
-                        @equipement_id,
-                        @utilisateur_id,
-                        @type_mouvement,
-                        @note
-                    )
+                    INSERT INTO Mouvements(equipement_id,utilisateur_id,type_mouvement,note,unite_id) VALUES((SELECT equipement_id FROM UnitesEquipement WHERE id=@equipement_id),@utilisateur_id,@type_mouvement,@note,@equipement_id)
                 `);
 
             res.json({
@@ -609,7 +457,7 @@ app.put(
             const resultat = await pool.request()
                 .input('id', id)
                 .query(`
-                    UPDATE Equipements
+                    UPDATE EquipementsUnitaires
                     SET
                         etat = 'Perdu / Volé',
                         attribue_a_id = NULL,
@@ -635,20 +483,7 @@ app.put(
                 .input('type_mouvement', 'Perdu / Volé')
                 .input('note', note.trim())
                 .query(`
-                    INSERT INTO Mouvements
-                    (
-                        equipement_id,
-                        utilisateur_id,
-                        type_mouvement,
-                        note
-                    )
-                    VALUES
-                    (
-                        @equipement_id,
-                        @utilisateur_id,
-                        @type_mouvement,
-                        @note
-                    )
+                    INSERT INTO Mouvements(equipement_id,utilisateur_id,type_mouvement,note,unite_id) VALUES((SELECT equipement_id FROM UnitesEquipement WHERE id=@equipement_id),@utilisateur_id,@type_mouvement,@note,@equipement_id)
                 `);
 
             res.json({
@@ -665,82 +500,6 @@ app.put(
     }
 );
 
-// MODIFIER UN ÉQUIPEMENT
-
-app.put('/api/equipements/:id', verifierConnexion, async (req, res) => {
-    try {
-        if (!['Administrateur', 'Employé'].includes(req.session.utilisateur.role)) {
-            return res.status(403).json({ erreur: 'Modification non autorisée' });
-        }
-        // La route de modification générale ne permet jamais d'appliquer un statut.
-        if (req.session.utilisateur.role === 'Employé' &&
-            ['etat','statut','attribue_a_id','utilisateur_id','date_attribution','valide_par_id','date_validation','ajoute_par_id'].some((key) => Object.prototype.hasOwnProperty.call(req.body, key))) {
-            return res.status(403).json({ erreur: 'Un employé doit soumettre une demande pour changer le statut.' });
-        }
-
-        const { id } = req.params;
-
-        const {
-            nom,
-            description,
-            numero_serie,
-            categorie_id,
-            quantite,
-            prix,
-            emplacement_id,
-            seuil_minimum
-        } = req.body;
-
-        const pool = await connecterBD();
-
-        const resultat = await pool.request()
-            .input('id', id)
-            .input('nom', nom)
-            .input('description', description)
-            .input('numero_serie', numero_serie)
-            .input('categorie_id', categorie_id)
-            .input('quantite', quantite)
-            .input('prix', prix)
-            .input('emplacement_id', emplacement_id)
-            .input('seuil_minimum', seuil_minimum)
-            .query(`
-                UPDATE Equipements
-                SET
-                    nom = @nom,
-                    description = @description,
-                    numero_serie = @numero_serie,
-                    categorie_id = @categorie_id,
-                    quantite = @quantite,
-                    prix = @prix,
-                    emplacement_id = @emplacement_id,
-                    seuil_minimum = @seuil_minimum
-                WHERE id = @id
-            `);
-
-        if (resultat.rowsAffected[0] === 0) {
-            return res.status(404).json({
-                erreur: 'Équipement introuvable'
-            });
-        }
-
-        res.json({
-            message: 'Équipement modifié avec succès'
-        });
-
-    } catch (erreur) {
-        console.error(erreur);
-
-        res.status(500).json({
-            erreur: 'Impossible de modifier l’équipement'
-        });
-    }
-});
-
-
-
-
-
-// ========================================
 // UTILISATEURS
 // ========================================
 
@@ -842,7 +601,8 @@ require('./src/validations-equipements')(app, connecterBD, verifierConnexion, ve
 require('./src/statuts-admin')(app, connecterBD, verifierConnexion, verifierAdmin);
 require('./src/reparations')(app, connecterBD, verifierConnexion, verifierAdmin);
 require('./src/signalements')(app, connecterBD, verifierConnexion, verifierAdmin);
+require('./src/notifications-etats')(app, connecterBD, verifierConnexion);
 
-app.listen(3000, () => {
-    console.log('Serveur TechStock démarré sur http://localhost:3000');
+app.listen(Number(process.env.PORT || 3000), () => {
+    console.log('Serveur TechStock démarré sur http://localhost:' + Number(process.env.PORT || 3000));
 });
