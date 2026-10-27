@@ -88,26 +88,28 @@
               id="recherche"
               type="search"
               placeholder="Rechercher un équipement, une catégorie, un emplacement, un numéro de série…"
-              aria-label="Rechercher dans l’inventaire" /></label
-          >
-          <div class="topbar-actions"><button
-            id="notifications"
-            class="icon-button"
-            aria-label="Voir les alertes"
-          >
-            <span data-icon="bell"></span><span id="badgeAlertes" hidden></span>
-          </button>
-          <div class="profile">
-            <span class="avatar" id="initiales"></span>
-            <div>
-              <strong id="nomUtilisateur"></strong
-              ><small id="roleUtilisateur"></small>
+              aria-label="Rechercher dans l’inventaire"
+          /></label>
+          <div class="topbar-actions">
+            <button
+              id="notifications"
+              class="icon-button"
+              aria-label="Voir les alertes"
+            >
+              <span data-icon="bell"></span
+              ><span id="badgeAlertes" hidden></span>
+            </button>
+            <div class="profile">
+              <span class="avatar" id="initiales"></span>
+              <div>
+                <strong id="nomUtilisateur"></strong
+                ><small id="roleUtilisateur"></small>
+              </div>
             </div>
+            <button id="btnDeconnexion" class="logout">
+              <span data-icon="logout"></span>Déconnexion
+            </button>
           </div>
-          <button id="btnDeconnexion" class="logout">
-            <span data-icon="logout"></span>Déconnexion
-          </button>
-        </div>
         </header>
         <main>
           <p id="messageInventaire" role="status" class="message"></p>
@@ -148,7 +150,10 @@
                     </div>
                   </div>
                   <div class="hero-photo" aria-hidden="true"></div>
-                  <div class="hero-tagline"><span>Performance.</span><span>Organisation.</span><span>Sérénité.</span></div>
+                  <div class="hero-tagline">
+                    <span>Performance.</span><span>Organisation.</span
+                    ><span>Sérénité.</span>
+                  </div>
                 </section>
                 <div id="statistiques" class="stats"></div>
                 <section class="card dashboard-categories">
@@ -214,7 +219,13 @@
                   </div>
                 </section>
                 <section class="card" id="carteSignalements" hidden>
-                  <div class="card-heading"><h2>Signalements d’équipements <span id="nombreSignalements"></span></h2><a href="#" id="voirToutesNotifications">Voir tout</a></div>
+                  <div class="card-heading">
+                    <h2>
+                      Signalements d’équipements
+                      <span id="nombreSignalements"></span>
+                    </h2>
+                    <a href="#" id="voirToutesNotifications">Voir tout</a>
+                  </div>
                   <p id="messageSignalements" role="status"></p>
                   <div id="listeSignalements"></div>
                 </section>
@@ -304,12 +315,19 @@
                     step="1"
                     required
                     value="0" /></label
-                ><label id="champStatut" hidden>Statut<select id="statutEquipement"></select></label
+                ><label id="champStatut" hidden
+                  >Statut<select id="statutEquipement"></select></label
                 ><label id="champDetailStatut" hidden></label
                 ><label class="wide"
                   >Description<textarea name="description" rows="4"></textarea>
                 </label>
-                <label class="wide" id="champSeriesUnites">Numéros de série des autres unités (un par ligne, facultatifs)<textarea name="numeros_serie" rows="3"></textarea></label>
+                <label class="wide" id="champSeriesUnites"
+                  >Numéros de série des autres unités (un par ligne,
+                  facultatifs)<textarea
+                    name="numeros_serie"
+                    rows="3"
+                  ></textarea>
+                </label>
                 <p class="wide empty" id="infoReferentiels"></p>
                 <div class="wide form-actions">
                   <button type="submit" class="primary">Enregistrer</button

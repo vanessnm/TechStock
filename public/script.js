@@ -7,7 +7,7 @@ const state = {
   notificationsReparation: [],
   etatsNotifications: {},
   equipments: null,
-  referentiels: {categories:[],emplacements:[]},
+  referentiels: { categories: [], emplacements: [] },
   editing: null,
   page: "tableau-de-bord",
   query: "",
@@ -176,8 +176,11 @@ async function verifierSession() {
 async function chargerInventaire() {
   $("messageInventaire").textContent = "Chargement de l’inventaire…";
   try {
-    const [data,referentiels] = await Promise.all([api("/api/equipements"),api("/api/referentiels")]);
-    state.referentiels=referentiels;
+    const [data, referentiels] = await Promise.all([
+      api("/api/equipements"),
+      api("/api/referentiels"),
+    ]);
+    state.referentiels = referentiels;
     if (!Array.isArray(data))
       throw new Error("Le format de l’inventaire est incorrect.");
     state.equipments = data;
@@ -243,13 +246,28 @@ function group(field) {
   }
   return [...counts].sort((a, b) => b[1] - a[1]);
 }
-function isDisponible(e) { return e.etat === "Disponible" && e.attribue_a_id == null && e.date_attribution == null; }
-function sousSeuil(units) { const map=new Map(); for(const u of units || []) if(isLow(u)) map.set(u.modele_id,u); return [...map.values()]; }
+function isDisponible(e) {
+  return (
+    e.etat === "Disponible" &&
+    e.attribue_a_id == null &&
+    e.date_attribution == null
+  );
+}
+function sousSeuil(units) {
+  const map = new Map();
+  for (const u of units || []) if (isLow(u)) map.set(u.modele_id, u);
+  return [...map.values()];
+}
 function isLow(e) {
-  const units=(state.equipments || []).filter((u)=>u.modele_id===e.modele_id);
-  const available=units.filter(isDisponible).length;
-  const threshold=Math.max(0,...units.map((u)=>Number(u.seuil_minimum)||0));
-  return available<threshold;
+  const units = (state.equipments || []).filter(
+    (u) => u.modele_id === e.modele_id,
+  );
+  const available = units.filter(isDisponible).length;
+  const threshold = Math.max(
+    0,
+    ...units.map((u) => Number(u.seuil_minimum) || 0),
+  );
+  return available < threshold;
 }
 
 function render() {
@@ -274,19 +292,18 @@ function render() {
     option.value = status;
     $("filtreStatut").append(option);
   }
-  if(selected==="low"){const option=node("option","","Sous le seuil minimum");option.value="low";$("filtreStatut").append(option);}
+  if (selected === "low") {
+    const option = node("option", "", "Sous le seuil minimum");
+    option.value = "low";
+    $("filtreStatut").append(option);
+  }
   $("filtreStatut").value = selected;
 }
 function renderStats() {
   const e = state.equipments;
   const stats = [
     ["Équipements totaux", e.length, "box", "#3eb1f7"],
-    [
-      "Disponibles",
-      e.filter(isDisponible).length,
-      "check",
-      "#37ef99",
-    ],
+    ["Disponibles", e.filter(isDisponible).length, "check", "#37ef99"],
     [
       "En réparation",
       e.filter((x) => x.etat === "En réparation").length,
@@ -408,10 +425,11 @@ function matching() {
     (e) =>
       (!state.status ||
         (state.status === "low" ? isLow(e) : e.etat === state.status)) &&
-      [e.nom, e.categorie, e.emplacement, e.numero_serie, e.code_interne].some((value) =>
-        String(value || "")
-          .toLocaleLowerCase("fr")
-          .includes(state.query.toLocaleLowerCase("fr")),
+      [e.nom, e.categorie, e.emplacement, e.numero_serie, e.code_interne].some(
+        (value) =>
+          String(value || "")
+            .toLocaleLowerCase("fr")
+            .includes(state.query.toLocaleLowerCase("fr")),
       ),
   );
 }
@@ -427,15 +445,25 @@ function formattedDate(e) {
   return Number.isNaN(date.getTime()) ? "—" : date.toLocaleDateString("fr-CA");
 }
 function regrouperUnites(units) {
-  const groups=new Map();
-  for(const unit of units){
-    const key=unit.modele_id+"|"+unit.etat;
-    if(!groups.has(key))groups.set(key,{...unit,id:"g-"+key,unites:[],quantite:0});
-    const group=groups.get(key);group.unites.push(unit);group.quantite++;
+  const groups = new Map();
+  for (const unit of units) {
+    const key = unit.modele_id + "|" + unit.etat;
+    if (!groups.has(key))
+      groups.set(key, { ...unit, id: "g-" + key, unites: [], quantite: 0 });
+    const group = groups.get(key);
+    group.unites.push(unit);
+    group.quantite++;
   }
-  return [...groups.values()].map((group)=>({...group,
-    numero_serie:group.unites.length===1 ? group.unites[0].numero_serie || group.unites[0].code_interne : group.unites.length+" unités — choisir pour agir",
-    emplacement:new Set(group.unites.map((u)=>u.emplacement)).size>1 ? "Emplacements multiples" : group.emplacement,
+  return [...groups.values()].map((group) => ({
+    ...group,
+    numero_serie:
+      group.unites.length === 1
+        ? group.unites[0].numero_serie || group.unites[0].code_interne
+        : group.unites.length + " unités — choisir pour agir",
+    emplacement:
+      new Set(group.unites.map((u) => u.emplacement)).size > 1
+        ? "Emplacements multiples"
+        : group.emplacement,
   }));
 }
 function afficherNumerosSerie(group) {
@@ -444,7 +472,15 @@ function afficherNumerosSerie(group) {
   const title = node("h2", "", "Numéros de série — " + group.nom);
   const list = node("ul");
   for (const unit of group.unites) {
-    list.append(node("li", "", (unit.numero_serie || "N° de série non renseigné") + " — " + unit.code_interne));
+    list.append(
+      node(
+        "li",
+        "",
+        (unit.numero_serie || "N° de série non renseigné") +
+          " — " +
+          unit.code_interne,
+      ),
+    );
   }
   const close = node("button", "action-button", "Fermer");
   close.type = "button";
@@ -456,47 +492,116 @@ function afficherNumerosSerie(group) {
 }
 
 function choisirUnite(group, run) {
-  const user=state.user;
-  const dialog=node("dialog","assignment-dialog");
-  const title=node("h2","",group.nom+" · choisir l’unité");title.id="titreChoixUnite";
-  dialog.setAttribute("aria-labelledby",title.id);
-  const label=node("label","","Unité concernée");
-  const select=node("select");select.required=true;
-  const empty=node("option","","Sélectionner une unité…");empty.value="";select.append(empty);
-  for(const unit of group.unites){
-    const option=node("option","",(unit.numero_serie || "N° de série non renseigné")+" · "+unit.code_interne+" · "+unit.etat);
-    option.value=unit.id;select.append(option);
+  const user = state.user;
+  const dialog = node("dialog", "assignment-dialog");
+  const title = node("h2", "", group.nom + " · choisir l’unité");
+  title.id = "titreChoixUnite";
+  dialog.setAttribute("aria-labelledby", title.id);
+  const label = node("label", "", "Unité concernée");
+  const select = node("select");
+  select.required = true;
+  const empty = node("option", "", "Sélectionner une unité…");
+  empty.value = "";
+  select.append(empty);
+  for (const unit of group.unites) {
+    const option = node(
+      "option",
+      "",
+      (unit.numero_serie || "N° de série non renseigné") +
+        " · " +
+        unit.code_interne +
+        " · " +
+        unit.etat,
+    );
+    option.value = unit.id;
+    select.append(option);
   }
   label.append(select);
-  const actions=node("div","form-actions");
-  const next=node("button","action-button","Continuer");next.type="button";next.disabled=true;
-  const history=node("button","action-button","Historique de l’unité");history.type="button";history.disabled=true;
-  const cancel=node("button","action-button","Annuler");cancel.type="button";
-  const message=node("p");message.setAttribute("role","status");
-  select.addEventListener("change",()=>{next.disabled=history.disabled=!select.value;});
-  next.addEventListener("click",()=>{
-    if(state.user!==user){dialog.close();return;}
-    const unit=state.equipments?.find((u)=>u.id===Number(select.value));
-    if(!unit){message.textContent="Unité indisponible. Actualisez l’inventaire.";return;}
-    dialog.close();run(unit);
+  const actions = node("div", "form-actions");
+  const next = node("button", "action-button", "Continuer");
+  next.type = "button";
+  next.disabled = true;
+  const history = node("button", "action-button", "Historique de l’unité");
+  history.type = "button";
+  history.disabled = true;
+  const cancel = node("button", "action-button", "Annuler");
+  cancel.type = "button";
+  const message = node("p");
+  message.setAttribute("role", "status");
+  select.addEventListener("change", () => {
+    next.disabled = history.disabled = !select.value;
   });
-  history.addEventListener("click",()=>{if(select.value)ouvrirHistoriqueUnite(Number(select.value));});
-  cancel.addEventListener("click",()=>dialog.close());
-  dialog.addEventListener("close",()=>dialog.remove(),{once:true});
-  actions.append(next,history,cancel);dialog.append(title,label,message,actions);document.body.append(dialog);dialog.showModal();
-}
-async function ouvrirHistoriqueUnite(id){
-  const user=state.user;const dialog=node("dialog","assignment-dialog");
-  dialog.setAttribute("aria-label","Historique de l’unité");
-  const title=node("h2","","Historique de l’unité");const content=node("div");content.append(node("p","","Chargement…"));
-  const close=node("button","action-button","Fermer");close.type="button";close.addEventListener("click",()=>dialog.close());
-  dialog.addEventListener("close",()=>dialog.remove(),{once:true});dialog.append(title,content,close);document.body.append(dialog);dialog.showModal();
-  try{const rows=await api(`/api/equipements/${id}/historique`);if(state.user!==user){dialog.close();return;}if(!dialog.isConnected)return;content.replaceChildren();
-    for(const [label,list] of [["Mouvements de cette unité",rows.unite],["Historique antérieur de la fiche — non réparti entre les unités",rows.ancienne_fiche]]){
-      content.append(node("h3","",label));if(!list.length)content.append(node("p","empty","Aucun mouvement."));
-      for(const m of list)content.append(node("p","report-description",new Date(m.date_mouvement).toLocaleString("fr-CA")+" · "+m.auteur+" · "+m.type_mouvement+(m.note?" · "+m.note:"")));
+  next.addEventListener("click", () => {
+    if (state.user !== user) {
+      dialog.close();
+      return;
     }
-  }catch(error){content.replaceChildren(node("p","",error.message));}
+    const unit = state.equipments?.find((u) => u.id === Number(select.value));
+    if (!unit) {
+      message.textContent = "Unité indisponible. Actualisez l’inventaire.";
+      return;
+    }
+    dialog.close();
+    run(unit);
+  });
+  history.addEventListener("click", () => {
+    if (select.value) ouvrirHistoriqueUnite(Number(select.value));
+  });
+  cancel.addEventListener("click", () => dialog.close());
+  dialog.addEventListener("close", () => dialog.remove(), { once: true });
+  actions.append(next, history, cancel);
+  dialog.append(title, label, message, actions);
+  document.body.append(dialog);
+  dialog.showModal();
+}
+async function ouvrirHistoriqueUnite(id) {
+  const user = state.user;
+  const dialog = node("dialog", "assignment-dialog");
+  dialog.setAttribute("aria-label", "Historique de l’unité");
+  const title = node("h2", "", "Historique de l’unité");
+  const content = node("div");
+  content.append(node("p", "", "Chargement…"));
+  const close = node("button", "action-button", "Fermer");
+  close.type = "button";
+  close.addEventListener("click", () => dialog.close());
+  dialog.addEventListener("close", () => dialog.remove(), { once: true });
+  dialog.append(title, content, close);
+  document.body.append(dialog);
+  dialog.showModal();
+  try {
+    const rows = await api(`/api/equipements/${id}/historique`);
+    if (state.user !== user) {
+      dialog.close();
+      return;
+    }
+    if (!dialog.isConnected) return;
+    content.replaceChildren();
+    for (const [label, list] of [
+      ["Mouvements de cette unité", rows.unite],
+      [
+        "Historique antérieur de la fiche — non réparti entre les unités",
+        rows.ancienne_fiche,
+      ],
+    ]) {
+      content.append(node("h3", "", label));
+      if (!list.length) content.append(node("p", "empty", "Aucun mouvement."));
+      for (const m of list)
+        content.append(
+          node(
+            "p",
+            "report-description",
+            new Date(m.date_mouvement).toLocaleString("fr-CA") +
+              " · " +
+              m.auteur +
+              " · " +
+              m.type_mouvement +
+              (m.note ? " · " + m.note : ""),
+          ),
+        );
+    }
+  } catch (error) {
+    content.replaceChildren(node("p", "", error.message));
+  }
 }
 
 function renderTables() {
@@ -529,10 +634,17 @@ function drawTable(id, equipments, recent) {
   }
   for (const e of equipments) {
     const row = node("tr");
-    row.append(node("td", "", e.nom ?? "—"), node("td", "", e.categorie ?? "—"));
+    row.append(
+      node("td", "", e.nom ?? "—"),
+      node("td", "", e.categorie ?? "—"),
+    );
     const serialCell = node("td");
     if (e.unites?.length > 1) {
-      const link = node("a", "serial-numbers-link", "Voir les numéros de série");
+      const link = node(
+        "a",
+        "serial-numbers-link",
+        "Voir les numéros de série",
+      );
       link.href = "#";
       link.addEventListener("click", (event) => {
         event.preventDefault();
@@ -568,8 +680,11 @@ function drawTable(id, equipments, recent) {
       menu.addEventListener("change", () => {
         const action = available.find((item) => item.id === menu.value);
         menu.value = "";
-        try { action?.run(); }
-        catch (error) { $("messageInventaire").textContent = error.message; }
+        try {
+          action?.run();
+        } catch (error) {
+          $("messageInventaire").textContent = error.message;
+        }
       });
       actions.append(menu);
       row.append(actions);
@@ -579,53 +694,124 @@ function drawTable(id, equipments, recent) {
 }
 // Les mêmes choix restent visibles; chaque exécution contrôle les permissions.
 function equipmentActions(e) {
-  if (e.unites) return equipmentActions(e.unites[0]).map((action) => ({...action,
-    run: () => choisirUnite(e, (unit) => {
-      const current = equipmentActions(unit).find((item) => item.id === action.id);
-      if (current) current.run(); else afficherMessageAction("Cette action ne s’applique plus à l’unité sélectionnée.");
-    }),
-  }));
+  if (e.unites)
+    return equipmentActions(e.unites[0]).map((action) => ({
+      ...action,
+      run: () =>
+        choisirUnite(e, (unit) => {
+          const current = equipmentActions(unit).find(
+            (item) => item.id === action.id,
+          );
+          if (current) current.run();
+          else
+            afficherMessageAction(
+              "Cette action ne s’applique plus à l’unité sélectionnée.",
+            );
+        }),
+    }));
   const actions = [
-    { id: "modifier", label: "Modifier", run: () => {
-      state.editing = e;
-      location.hash = "ajouter";
-      afficherPage();
-    } },
-    { id: "attribuer", label: "Attribuer à un employé", run: () => executerActionStatut(e, "Attribué") },
-    { id: "disponible", label: "Disponible", run: () => executerActionStatut(e, "Disponible") },
-    { id: "reparation", label: "En réparation", run: () => executerActionStatut(e, "En réparation") },
-    { id: "perdu-vole", label: "Perdu / Volé", run: () => executerActionStatut(e, "Perdu / Volé") },
-    { id: "hors-service", label: "À remplacer / Hors service", run: () => executerActionStatut(e, "À remplacer / Hors service") },
+    {
+      id: "modifier",
+      label: "Modifier",
+      run: () => {
+        state.editing = e;
+        location.hash = "ajouter";
+        afficherPage();
+      },
+    },
+    {
+      id: "attribuer",
+      label: "Attribuer à un employé",
+      run: () => executerActionStatut(e, "Attribué"),
+    },
+    {
+      id: "disponible",
+      label: "Disponible",
+      run: () => executerActionStatut(e, "Disponible"),
+    },
+    {
+      id: "reparation",
+      label: "En réparation",
+      run: () => executerActionStatut(e, "En réparation"),
+    },
+    {
+      id: "perdu-vole",
+      label: "Perdu / Volé",
+      run: () => executerActionStatut(e, "Perdu / Volé"),
+    },
+    {
+      id: "hors-service",
+      label: "À remplacer / Hors service",
+      run: () => executerActionStatut(e, "À remplacer / Hors service"),
+    },
   ];
   if (state.user?.role === "Administrateur") {
-    const decision = state.validationsEquipements.find((v) => v.equipement_id === e.id);
-    if (e.etat === "En attente de validation" && decision?.statut !== "Refusée") {
-      actions.push({id:"valider",label:"Valider",run:()=>ouvrirDecisionValidation(e,"Acceptée")},
-        {id:"refuser-ajout",label:"Refuser",run:()=>ouvrirDecisionValidation(e,"Refusée")});
+    const decision = state.validationsEquipements.find(
+      (v) => v.equipement_id === e.id,
+    );
+    if (
+      e.etat === "En attente de validation" &&
+      decision?.statut !== "Refusée"
+    ) {
+      actions.push(
+        {
+          id: "valider",
+          label: "Valider",
+          run: () => ouvrirDecisionValidation(e, "Acceptée"),
+        },
+        {
+          id: "refuser-ajout",
+          label: "Refuser",
+          run: () => ouvrirDecisionValidation(e, "Refusée"),
+        },
+      );
     }
     return actions;
   }
-  if (state.user?.role === "Employé") return actions
-    .filter((action) => ["modifier", "disponible", "reparation", "perdu-vole", "hors-service"].includes(action.id))
-    .map((action) => ({ ...action, label: {
-      reparation: "En réparation",
-      "perdu-vole": "Signaler Perdu / Volé",
-      "hors-service": "Signaler À remplacer / Hors service",
-    }[action.id] || action.label }));
+  if (state.user?.role === "Employé")
+    return actions
+      .filter((action) =>
+        [
+          "modifier",
+          "disponible",
+          "reparation",
+          "perdu-vole",
+          "hors-service",
+        ].includes(action.id),
+      )
+      .map((action) => ({
+        ...action,
+        label:
+          {
+            reparation: "En réparation",
+            "perdu-vole": "Signaler Perdu / Volé",
+            "hors-service": "Signaler À remplacer / Hors service",
+          }[action.id] || action.label,
+      }));
   return [];
 }
 function afficherMessageAction(text) {
-  const message = $(state.page === "ajouter" ? "messageEquipement" : "messageInventaire");
+  const message = $(
+    state.page === "ajouter" ? "messageEquipement" : "messageInventaire",
+  );
   message.textContent = text;
   message.setAttribute("role", "alert");
-  message.scrollIntoView?.({behavior:"smooth",block:"center"});
+  message.scrollIntoView?.({ behavior: "smooth", block: "center" });
 }
 function raisonRefusDisponible(e) {
   if (e.etat === "À remplacer / Hors service")
     return "Cet équipement est « À remplacer / Hors service ». Seul un administrateur peut le remettre en service au statut Disponible. Aucun changement enregistré.";
   if (e.etat === "En attente de validation")
     return "Cet équipement attend sa validation par un administrateur. Un employé ne peut pas le rendre Disponible. Aucun changement enregistré.";
-  if (state.signalements.some((s) => (s.equipement_id === e.id || (s.unite_id == null && s.equipement_origine_id === e.equipement_origine_id)) && s.statut === "En attente"))
+  if (
+    state.signalements.some(
+      (s) =>
+        (s.equipement_id === e.id ||
+          (s.unite_id == null &&
+            s.equipement_origine_id === e.equipement_origine_id)) &&
+        s.statut === "En attente",
+    )
+  )
     return "Un signalement est en attente. Un administrateur doit le traiter avant le retour à Disponible. Aucun changement enregistré.";
   if (e.attribue_a_id != null && e.attribue_a_id !== state.user?.id)
     return "Cet équipement est attribué à un autre employé. Son détenteur ou un administrateur doit confirmer le retour. Aucun changement enregistré.";
@@ -638,28 +824,47 @@ function informerHorsService() {
   dialog.setAttribute("role", "alertdialog");
   dialog.setAttribute("aria-label", "Équipement hors service");
   dialog.setAttribute("aria-describedby", "messageHorsService");
-  const message = node("p", "", "Cet équipement est déclaré hors service. Seul un administrateur peut le remettre au statut Disponible.");
+  const message = node(
+    "p",
+    "",
+    "Cet équipement est déclaré hors service. Seul un administrateur peut le remettre au statut Disponible.",
+  );
   message.id = "messageHorsService";
   const button = node("button", "action-button", "OK");
   button.type = "button";
   button.addEventListener("click", () => dialog.close());
-  dialog.addEventListener("close", () => dialog.remove(), {once:true});
+  dialog.addEventListener("close", () => dialog.remove(), { once: true });
   dialog.append(message, button);
   document.body.append(dialog);
   dialog.showModal();
   button.focus();
 }
 function executerActionStatut(e, status) {
-  if (state.user?.role === "Employé" && status === "Disponible" && e.etat === "À remplacer / Hors service") {
+  if (
+    state.user?.role === "Employé" &&
+    status === "Disponible" &&
+    e.etat === "À remplacer / Hors service"
+  ) {
     informerHorsService();
     return;
   }
-  const message = $(state.page === "ajouter" ? "messageEquipement" : "messageInventaire");
-  if (state.user?.role === "Employé" && ["Perdu / Volé", "À remplacer / Hors service"].includes(status)) {
+  const message = $(
+    state.page === "ajouter" ? "messageEquipement" : "messageInventaire",
+  );
+  if (
+    state.user?.role === "Employé" &&
+    ["Perdu / Volé", "À remplacer / Hors service"].includes(status)
+  ) {
     ouvrirSignalement(e, status);
     return;
   }
-  if (state.user?.role !== "Administrateur" && !(state.user?.role === "Employé" && ["Disponible", "En réparation"].includes(status))) {
+  if (
+    state.user?.role !== "Administrateur" &&
+    !(
+      state.user?.role === "Employé" &&
+      ["Disponible", "En réparation"].includes(status)
+    )
+  ) {
     afficherMessageAction("Cette action est réservée à l’administrateur.");
     return;
   }
@@ -669,9 +874,11 @@ function executerActionStatut(e, status) {
   }
   const transition = statusTransitions(e).find((t) => t.status === status);
   if (!transition) {
-    afficherMessageAction(state.user?.role === "Employé" && status === "Disponible"
-      ? raisonRefusDisponible(e)
-      : `Le passage de « ${e.etat} » à « ${status} » n’est pas pris en charge pour votre rôle. Aucun changement enregistré.`);
+    afficherMessageAction(
+      state.user?.role === "Employé" && status === "Disponible"
+        ? raisonRefusDisponible(e)
+        : `Le passage de « ${e.etat} » à « ${status} » n’est pas pris en charge pour votre rôle. Aucun changement enregistré.`,
+    );
     return;
   }
   message.textContent = "";
@@ -689,15 +896,25 @@ function ouvrirActionStatut(e, transition) {
   if (transition.field) {
     const label = node("label", "", transition.label);
     input = node("input");
-    input.required = state.user?.role === "Employé" && transition.status === "En réparation";
+    input.required =
+      state.user?.role === "Employé" && transition.status === "En réparation";
     label.append(input);
     form.append(label);
   }
   let retour;
   if (transition.returnRequired || transition.reactivationRequired) {
-    const label = node("label", "", "Je confirme vouloir changer le statut de cet équipement à « Disponible ».");
-    retour = node("input"); retour.type = "checkbox"; retour.required = true; retour.style.width = "auto"; retour.style.justifySelf = "start";
-    label.append(retour); form.append(label);
+    const label = node(
+      "label",
+      "",
+      "Je confirme vouloir changer le statut de cet équipement à « Disponible ».",
+    );
+    retour = node("input");
+    retour.type = "checkbox";
+    retour.required = true;
+    retour.style.width = "auto";
+    retour.style.justifySelf = "start";
+    label.append(retour);
+    form.append(label);
   }
   const message = node("p");
   message.setAttribute("role", "status");
@@ -705,7 +922,10 @@ function ouvrirActionStatut(e, transition) {
   const submit = node("button", "action-button", "Confirmer");
   submit.type = "submit";
   submit.disabled = !!retour;
-  if (retour) retour.addEventListener("change", () => { submit.disabled = sending || !retour.checked; });
+  if (retour)
+    retour.addEventListener("change", () => {
+      submit.disabled = sending || !retour.checked;
+    });
   const cancel = node("button", "action-button", "Annuler");
   cancel.type = "button";
   cancel.addEventListener("click", () => dialog.close());
@@ -715,20 +935,39 @@ function ouvrirActionStatut(e, transition) {
   document.body.append(dialog);
   dialog.addEventListener("close", () => dialog.remove(), { once: true });
   let sending = false;
-  dialog.addEventListener("cancel", (event) => { if (sending) event.preventDefault(); });
+  dialog.addEventListener("cancel", (event) => {
+    if (sending) event.preventDefault();
+  });
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     if (sending) return;
-    if (state.user !== sessionUser) { dialog.close(); return; }
+    if (state.user !== sessionUser) {
+      dialog.close();
+      return;
+    }
     if (!statusTransitions(e).some((t) => t.route === transition.route)) {
       message.textContent = "Cette transition n’est plus autorisée.";
       return;
     }
-    const body = transition.adminStatus ? {etat:transition.status} : {};
-    if (retour) { if (!retour.checked) { message.textContent = "Je confirme vouloir changer le statut de cet équipement à « Disponible »."; return; } body[transition.reactivationRequired ? "confirmer_remise_service" : "confirmer_retour"] = true; }
+    const body = transition.adminStatus ? { etat: transition.status } : {};
+    if (retour) {
+      if (!retour.checked) {
+        message.textContent =
+          "Je confirme vouloir changer le statut de cet équipement à « Disponible ».";
+        return;
+      }
+      body[
+        transition.reactivationRequired
+          ? "confirmer_remise_service"
+          : "confirmer_retour"
+      ] = true;
+    }
     if (transition.field) {
       const value = input.value.trim();
-      if (input.required && !value) { message.textContent = "La description du problème est obligatoire."; return; }
+      if (input.required && !value) {
+        message.textContent = "La description du problème est obligatoire.";
+        return;
+      }
       body[transition.field] = value;
     }
     sending = true;
@@ -744,10 +983,15 @@ function ouvrirActionStatut(e, transition) {
       await chargerInventaire();
       await chargerSignalements();
       if (state.user === sessionUser) {
-        synchroniserStatutEdition(state.equipments ? result.message || "Opération enregistrée." : "Opération enregistrée ; actualisation indisponible.");
+        synchroniserStatutEdition(
+          state.equipments
+            ? result.message || "Opération enregistrée."
+            : "Opération enregistrée ; actualisation indisponible.",
+        );
         $("messageInventaire").textContent = state.equipments
           ? result.message || "Statut mis à jour."
-          : "Statut enregistré. Actualisation impossible : " + $("messageInventaire").textContent;
+          : "Statut enregistré. Actualisation impossible : " +
+            $("messageInventaire").textContent;
       }
     } catch (error) {
       if (state.user !== sessionUser) dialog.close();
@@ -810,14 +1054,15 @@ async function ouvrirAttribution(e) {
     try {
       const result = await api(
         `/api/equipements/${encodeURIComponent(e.id)}/statut-administrateur`,
-        jsonRequest("PUT", { etat:"Attribué", utilisateur_id: id }),
+        jsonRequest("PUT", { etat: "Attribué", utilisateur_id: id }),
       );
       dialog.close();
       await chargerInventaire();
       if (state.user === sessionUser) {
         $("messageInventaire").textContent = state.equipments
           ? result.message || "Équipement attribué avec succès."
-          : "Attribution réussie. Actualisation impossible : " + $("messageInventaire").textContent;
+          : "Attribution réussie. Actualisation impossible : " +
+            $("messageInventaire").textContent;
       }
     } catch (error) {
       if (state.user !== sessionUser) dialog.close();
@@ -830,11 +1075,19 @@ async function ouvrirAttribution(e) {
   try {
     const users = await api("/api/utilisateurs");
     if (!dialog.isConnected) return;
-    if (state.user !== sessionUser) { dialog.close(); return; }
-    if (!Array.isArray(users)) throw new Error("Le format des utilisateurs est incorrect.");
-    employees = users.filter((user) => user.role === "Employé" &&
-      (user.actif === true || user.actif === 1) &&
-      Number.isInteger(Number(user.id)) && Number(user.id) > 0);
+    if (state.user !== sessionUser) {
+      dialog.close();
+      return;
+    }
+    if (!Array.isArray(users))
+      throw new Error("Le format des utilisateurs est incorrect.");
+    employees = users.filter(
+      (user) =>
+        user.role === "Employé" &&
+        (user.actif === true || user.actif === 1) &&
+        Number.isInteger(Number(user.id)) &&
+        Number(user.id) > 0,
+    );
     const placeholder = node("option", "", "Sélectionner un employé…");
     placeholder.value = "";
     select.append(placeholder);
@@ -843,7 +1096,9 @@ async function ouvrirAttribution(e) {
       option.value = employee.id;
       select.append(option);
     }
-    message.textContent = employees.length ? "" : "Aucun employé actif disponible.";
+    message.textContent = employees.length
+      ? ""
+      : "Aucun employé actif disponible.";
     select.disabled = submit.disabled = !employees.length;
     if (employees.length) select.focus();
   } catch (error) {
@@ -888,13 +1143,16 @@ function afficherPage() {
   window.scrollTo(0, 0);
 }
 window.addEventListener("hashchange", () => {
-  if ((location.hash.slice(1) || "tableau-de-bord") !== state.page) afficherPage();
+  if ((location.hash.slice(1) || "tableau-de-bord") !== state.page)
+    afficherPage();
 });
 document.querySelectorAll('[data-page="inventaire"]').forEach((link) => {
   link.addEventListener("click", async (event) => {
     event.preventDefault();
-    state.query = ""; state.status = "";
-    $("recherche").value = ""; $("filtreStatut").value = "";
+    state.query = "";
+    state.status = "";
+    $("recherche").value = "";
+    $("filtreStatut").value = "";
     location.hash = "inventaire";
     afficherPage();
     await chargerInventaire();
@@ -921,34 +1179,97 @@ $("notifications").addEventListener("click", () => {
 function statusTransitions(e) {
   if (state.user?.role === "Employé") {
     const transitions = [];
-    const pending = state.signalements.some((s) => (s.equipement_id === e.id || (s.unite_id == null && s.equipement_origine_id === e.equipement_origine_id)) && s.statut === "En attente");
-    const retour = ["Attribué","En attente de retour"].includes(e.etat);
-    if (!pending && e.etat === "En réparation" && (e.attribue_a_id == null || e.attribue_a_id === state.user.id))
-      transitions.push({status:"Disponible",route:"reparation/fin",field:"resolution",label:"Commentaire (facultatif)",returnRequired:true});
-    if (!pending && ((retour && e.attribue_a_id === state.user.id) ||
-      (e.etat === "Perdu / Volé" && e.attribue_a_id == null && e.date_attribution == null)))
-      transitions.push({status:"Disponible",route:"disponibilite",field:"commentaire",label:"Commentaire (facultatif)",returnRequired:true});
-    if (!pending && ["Disponible","Attribué"].includes(e.etat) && (e.attribue_a_id == null || e.attribue_a_id === state.user.id))
-      transitions.push({status:"En réparation",route:"reparation",field:"raison",label:"Description du problème (obligatoire)",required:true});
-    if (["Disponible","Attribué","En réparation","En attente de retour"].includes(e.etat))
-      for (const status of ["Perdu / Volé","À remplacer / Hors service"])
-        transitions.push({status,signalement:true,field:"description",label:"Description du problème (obligatoire)",required:true});
+    const pending = state.signalements.some(
+      (s) =>
+        (s.equipement_id === e.id ||
+          (s.unite_id == null &&
+            s.equipement_origine_id === e.equipement_origine_id)) &&
+        s.statut === "En attente",
+    );
+    const retour = ["Attribué", "En attente de retour"].includes(e.etat);
+    if (
+      !pending &&
+      e.etat === "En réparation" &&
+      (e.attribue_a_id == null || e.attribue_a_id === state.user.id)
+    )
+      transitions.push({
+        status: "Disponible",
+        route: "reparation/fin",
+        field: "resolution",
+        label: "Commentaire (facultatif)",
+        returnRequired: true,
+      });
+    if (
+      !pending &&
+      ((retour && e.attribue_a_id === state.user.id) ||
+        (e.etat === "Perdu / Volé" &&
+          e.attribue_a_id == null &&
+          e.date_attribution == null))
+    )
+      transitions.push({
+        status: "Disponible",
+        route: "disponibilite",
+        field: "commentaire",
+        label: "Commentaire (facultatif)",
+        returnRequired: true,
+      });
+    if (
+      !pending &&
+      ["Disponible", "Attribué"].includes(e.etat) &&
+      (e.attribue_a_id == null || e.attribue_a_id === state.user.id)
+    )
+      transitions.push({
+        status: "En réparation",
+        route: "reparation",
+        field: "raison",
+        label: "Description du problème (obligatoire)",
+        required: true,
+      });
+    if (
+      [
+        "Disponible",
+        "Attribué",
+        "En réparation",
+        "En attente de retour",
+      ].includes(e.etat)
+    )
+      for (const status of ["Perdu / Volé", "À remplacer / Hors service"])
+        transitions.push({
+          status,
+          signalement: true,
+          field: "description",
+          label: "Description du problème (obligatoire)",
+          required: true,
+        });
     return transitions;
   }
   if (state.user?.role !== "Administrateur") return [];
   return equipmentStatuses.map((status) => ({
-    status,route:"statut-administrateur",adminStatus:true,
-    field:["Attribué","En attente de retour"].includes(status)?"utilisateur_id":"commentaire",
-    label:["Attribué","En attente de retour"].includes(status)?"Employé actif":{
-      "En réparation":"Raison de la réparation / Commentaire (facultatif)",
-      "Perdu / Volé":"Raison de la perte ou du vol / Commentaire (facultatif)",
-      "À remplacer / Hors service":"Raison du remplacement ou de la mise hors service / Commentaire (facultatif)",
-    }[status] || "Commentaire (facultatif)",
+    status,
+    route: "statut-administrateur",
+    adminStatus: true,
+    field: ["Attribué", "En attente de retour"].includes(status)
+      ? "utilisateur_id"
+      : "commentaire",
+    label: ["Attribué", "En attente de retour"].includes(status)
+      ? "Employé actif"
+      : {
+          "En réparation": "Raison de la réparation / Commentaire (facultatif)",
+          "Perdu / Volé":
+            "Raison de la perte ou du vol / Commentaire (facultatif)",
+          "À remplacer / Hors service":
+            "Raison du remplacement ou de la mise hors service / Commentaire (facultatif)",
+        }[status] || "Commentaire (facultatif)",
   }));
 }
 const equipmentStatuses = [
-  "Disponible", "Attribué", "En réparation", "En attente de retour",
-  "En attente de validation", "Perdu / Volé", "À remplacer / Hors service",
+  "Disponible",
+  "Attribué",
+  "En réparation",
+  "En attente de retour",
+  "En attente de validation",
+  "Perdu / Volé",
+  "À remplacer / Hors service",
 ];
 let statusDetailVersion = 0;
 let statusEmployees = [];
@@ -957,16 +1278,41 @@ function prepareStatusField() {
   const select = $("statutEquipement");
   $("champStatut").hidden = !edit;
   select.replaceChildren();
-  select.disabled = !edit || !["Administrateur","Employé"].includes(state.user?.role);
+  select.disabled =
+    !edit || !["Administrateur", "Employé"].includes(state.user?.role);
   if (edit) {
     const transitions = statusTransitions(edit);
-    const statuses = state.user?.role === "Administrateur" ? equipmentStatuses : [...new Set([edit.etat,"Disponible","En réparation","Perdu / Volé","À remplacer / Hors service"])];
+    const statuses =
+      state.user?.role === "Administrateur"
+        ? equipmentStatuses
+        : [
+            ...new Set([
+              edit.etat,
+              "Disponible",
+              "En réparation",
+              "Perdu / Volé",
+              "À remplacer / Hors service",
+            ]),
+          ];
     for (const status of statuses) {
-      const supported = status === edit.etat || transitions.some((t) => t.status === status);
-      const option = node("option", "", (supported || state.user?.role === "Employé") ? (state.user?.role === "Employé" && ["Perdu / Volé","À remplacer / Hors service"].includes(status) && status !== edit.etat ? "Signaler " + status : status) : status + " (indisponible)");
+      const supported =
+        status === edit.etat || transitions.some((t) => t.status === status);
+      const option = node(
+        "option",
+        "",
+        supported || state.user?.role === "Employé"
+          ? state.user?.role === "Employé" &&
+            ["Perdu / Volé", "À remplacer / Hors service"].includes(status) &&
+            status !== edit.etat
+            ? "Signaler " + status
+            : status
+          : status + " (indisponible)",
+      );
       option.value = status;
       option.disabled = state.user?.role === "Employé" ? false : !supported;
-      if (!supported) option.title = "Transition non prise en charge par les routes métier pour cet équipement et ce rôle.";
+      if (!supported)
+        option.title =
+          "Transition non prise en charge par les routes métier pour cet équipement et ce rôle.";
       select.append(option);
     }
     select.value = edit.etat;
@@ -981,13 +1327,20 @@ async function updateStatusDetail() {
   label.replaceChildren();
   label.hidden = true;
   statusEmployees = [];
-  const transition = edit && statusTransitions(edit).find((t) => t.status === $("statutEquipement").value);
+  const transition =
+    edit &&
+    statusTransitions(edit).find(
+      (t) => t.status === $("statutEquipement").value,
+    );
   if (!transition?.field) return;
   label.hidden = false;
   label.append(document.createTextNode(transition.label));
-  const input = node(transition.field === "utilisateur_id" ? "select" : "input");
+  const input = node(
+    transition.field === "utilisateur_id" ? "select" : "input",
+  );
   input.id = "detailStatut";
-  input.required = transition.field === "utilisateur_id" || !!transition.required;
+  input.required =
+    transition.field === "utilisateur_id" || !!transition.required;
   label.append(input);
   if (transition.field !== "utilisateur_id") return;
   const placeholder = node("option", "", "Chargement des employés…");
@@ -995,11 +1348,24 @@ async function updateStatusDetail() {
   input.append(placeholder);
   try {
     const users = await api("/api/utilisateurs");
-    if (version !== statusDetailVersion || state.editing !== edit || state.user !== user) return;
-    if (!Array.isArray(users)) throw new Error("Le format des utilisateurs est incorrect.");
-    statusEmployees = users.filter((u) => u.role === "Employé" &&
-      (u.actif === true || u.actif === 1) && Number.isInteger(Number(u.id)) && Number(u.id) > 0);
-    placeholder.textContent = statusEmployees.length ? "Sélectionner un employé…" : "Aucun employé actif disponible.";
+    if (
+      version !== statusDetailVersion ||
+      state.editing !== edit ||
+      state.user !== user
+    )
+      return;
+    if (!Array.isArray(users))
+      throw new Error("Le format des utilisateurs est incorrect.");
+    statusEmployees = users.filter(
+      (u) =>
+        u.role === "Employé" &&
+        (u.actif === true || u.actif === 1) &&
+        Number.isInteger(Number(u.id)) &&
+        Number(u.id) > 0,
+    );
+    placeholder.textContent = statusEmployees.length
+      ? "Sélectionner un employé…"
+      : "Aucun employé actif disponible.";
     for (const employee of statusEmployees) {
       const option = node("option", "", `${employee.nom} (${employee.email})`);
       option.value = employee.id;
@@ -1012,7 +1378,10 @@ async function updateStatusDetail() {
   }
 }
 $("statutEquipement").addEventListener("change", () => {
-  if (state.user?.role !== "Employé" || !state.editing) { updateStatusDetail(); return; }
+  if (state.user?.role !== "Employé" || !state.editing) {
+    updateStatusDetail();
+    return;
+  }
   const requested = $("statutEquipement").value;
   const equipment = state.editing;
   // Le choix déclenche exactement la même fenêtre que la colonne Actions.
@@ -1033,15 +1402,24 @@ function synchroniserStatutEdition(message = "") {
 }
 function selectedStatusChange(edit) {
   if (!edit || $("statutEquipement").value === edit.etat) return null;
-  const transition = statusTransitions(edit).find((t) => t.status === $("statutEquipement").value);
-  if (!transition) throw new Error("Cette transition n’est pas prise en charge pour cet équipement et ce rôle. Le statut n’a pas été enregistré.");
-  const body = transition.adminStatus ? {etat:transition.status} : {};
+  const transition = statusTransitions(edit).find(
+    (t) => t.status === $("statutEquipement").value,
+  );
+  if (!transition)
+    throw new Error(
+      "Cette transition n’est pas prise en charge pour cet équipement et ce rôle. Le statut n’a pas été enregistré.",
+    );
+  const body = transition.adminStatus ? { etat: transition.status } : {};
   if (transition.field) {
     const value = $("detailStatut").value.trim();
     if (transition.required && !value) throw new Error(transition.label);
     if (transition.field === "utilisateur_id") {
       const id = Number(value);
-      if (!Number.isInteger(id) || id <= 0 || !statusEmployees.some((u) => Number(u.id) === id))
+      if (
+        !Number.isInteger(id) ||
+        id <= 0 ||
+        !statusEmployees.some((u) => Number(u.id) === id)
+      )
         throw new Error("Sélectionnez un employé actif.");
       body.utilisateur_id = id;
     } else {
@@ -1053,17 +1431,17 @@ function selectedStatusChange(edit) {
 function prepareEquipmentForm() {
   const form = $("formEquipement");
   form.reset();
-  form.elements.quantite.readOnly=!!state.editing;
-  $("champSeriesUnites").hidden=!!state.editing;
+  form.elements.quantite.readOnly = !!state.editing;
+  $("champSeriesUnites").hidden = !!state.editing;
   prepareStatusField();
   $("messageEquipement").textContent = "";
   $("titreFormulaire").textContent = state.editing
     ? "Modifier un équipement"
     : "Ajouter un équipement";
   $("infoAjout").textContent = state.editing
-    ? (state.user.role === "Administrateur"
+    ? state.user.role === "Administrateur"
       ? "Tous les statuts sont accessibles à l’administrateur. Une attribution exige un employé actif."
-      : "Disponible et réparation : changements directs autorisés. Perte/vol et hors service : signalements soumis à approbation.")
+      : "Disponible et réparation : changements directs autorisés. Perte/vol et hors service : signalements soumis à approbation."
     : state.user.role === "Administrateur"
       ? "Les nouveaux équipements seront disponibles."
       : "Les nouveaux équipements seront en attente de validation par un administrateur.";
@@ -1080,7 +1458,10 @@ function prepareEquipmentForm() {
     for (const e of state.equipments || [])
       if (e[field] != null)
         refs.set(String(e[field]), String(e[label] || e[field]));
-    for(const ref of (field==="categorie_id"?state.referentiels.categories:state.referentiels.emplacements))refs.set(String(ref.id),ref.nom);
+    for (const ref of field === "categorie_id"
+      ? state.referentiels.categories
+      : state.referentiels.emplacements)
+      refs.set(String(ref.id), ref.nom);
     for (const [id, name] of refs) {
       const option = node("option", "", name);
       option.value = id;
@@ -1125,9 +1506,20 @@ $("formEquipement").addEventListener("submit", async (event) => {
   let detailsSaved = false;
   try {
     const statusChange = selectedStatusChange(edit);
-    if (statusChange && !window.confirm(statusChange.status === "Disponible" ? "Je confirme vouloir changer le statut de cet équipement à « Disponible »." : statusChange.signalement ? "Soumettre ce signalement à l’administrateur ? Le statut reste inchangé." : `Confirmer le passage de « ${edit.etat} » à « ${statusChange.status} » ?`)) return;
+    if (
+      statusChange &&
+      !window.confirm(
+        statusChange.status === "Disponible"
+          ? "Je confirme vouloir changer le statut de cet équipement à « Disponible »."
+          : statusChange.signalement
+            ? "Soumettre ce signalement à l’administrateur ? Le statut reste inchangé."
+            : `Confirmer le passage de « ${edit.etat} » à « ${statusChange.status} » ?`,
+      )
+    )
+      return;
     if (statusChange?.returnRequired) statusChange.body.confirmer_retour = true;
-    if (statusChange?.reactivationRequired) statusChange.body.confirmer_remise_service = true;
+    if (statusChange?.reactivationRequired)
+      statusChange.body.confirmer_remise_service = true;
     const result = await api(
       edit
         ? `/api/equipements/${encodeURIComponent(edit.id)}`
@@ -1137,8 +1529,16 @@ $("formEquipement").addEventListener("submit", async (event) => {
     detailsSaved = true;
     if (statusChange) {
       const statusResult = await api(
-        statusChange.signalement ? "/api/signalements" : `/api/equipements/${encodeURIComponent(edit.id)}/${statusChange.route}`,
-        statusChange.signalement ? jsonRequest("POST", {equipement_id:Number(edit.id),type_signalement:statusChange.status,description:statusChange.body.description}) : jsonRequest("PUT", statusChange.body),
+        statusChange.signalement
+          ? "/api/signalements"
+          : `/api/equipements/${encodeURIComponent(edit.id)}/${statusChange.route}`,
+        statusChange.signalement
+          ? jsonRequest("POST", {
+              equipement_id: Number(edit.id),
+              type_signalement: statusChange.status,
+              description: statusChange.body.description,
+            })
+          : jsonRequest("PUT", statusChange.body),
       );
       result.message = statusResult.message;
     }
@@ -1150,7 +1550,10 @@ $("formEquipement").addEventListener("submit", async (event) => {
     if (state.equipments) $("messageInventaire").textContent = result.message;
   } catch (error) {
     if (detailsSaved && state.user) await chargerInventaire();
-    $("messageEquipement").textContent = (detailsSaved ? "Les informations ont été enregistrées, mais le statut n’a pas pu être changé : " : "") + error.message;
+    $("messageEquipement").textContent =
+      (detailsSaved
+        ? "Les informations ont été enregistrées, mais le statut n’a pas pu être changé : "
+        : "") + error.message;
   } finally {
     button.disabled = false;
   }
@@ -1205,22 +1608,55 @@ $("formUtilisateur").addEventListener("submit", async (event) => {
 });
 
 function cleNotification(source, report) {
-  const code = {"En attente":"P", "Acceptée":"A", "Refusée":"R"}[report.statut];
-  return source === "i" ? "i:" + report.id : source + ":" + report.id + ":" + code + (source === "v" ? ":" + (report.decision_id || 0) : "");
+  const code = { "En attente": "P", Acceptée: "A", Refusée: "R" }[
+    report.statut
+  ];
+  return source === "i"
+    ? "i:" + report.id
+    : source +
+        ":" +
+        report.id +
+        ":" +
+        code +
+        (source === "v" ? ":" + (report.decision_id || 0) : "");
 }
 function toutesNotifications() {
   const entries = [
-    ...state.notificationsReparation.map(report=>({source:"i",report,date:report.date_mouvement})),
-    ...state.signalements.map(report=>({source:"s",report,date:report.date_decision || report.date_signalement})),
-    ...state.validationsEquipements.map(report=>({source:"v",report,date:report.date_decision || report.date_signalement})),
+    ...state.notificationsReparation.map((report) => ({
+      source: "i",
+      report,
+      date: report.date_mouvement,
+    })),
+    ...state.signalements.map((report) => ({
+      source: "s",
+      report,
+      date: report.date_decision || report.date_signalement,
+    })),
+    ...state.validationsEquipements.map((report) => ({
+      source: "v",
+      report,
+      date: report.date_decision || report.date_signalement,
+    })),
   ];
-  return entries.map(item=>({...item,cle:cleNotification(item.source,item.report)})).sort((a,b)=>(Date.parse(b.date)||0)-(Date.parse(a.date)||0)||b.cle.localeCompare(a.cle));
+  return entries
+    .map((item) => ({
+      ...item,
+      cle: cleNotification(item.source, item.report),
+    }))
+    .sort(
+      (a, b) =>
+        (Date.parse(b.date) || 0) - (Date.parse(a.date) || 0) ||
+        b.cle.localeCompare(a.cle),
+    );
 }
 function actualiserBadgeSignalements() {
-  const unread=toutesNotifications().filter(n=>{const e=state.etatsNotifications[n.cle] || {};return !e.lue&&!e.archivee&&!e.retiree;}).length;
-  $("badgeAlertes").textContent=unread;
-  $("badgeAlertes").hidden=unread===0;
-  $("notifications").title=unread+" notification(s) non lue(s)";
+  const unread = toutesNotifications().filter((n) => {
+    const e = state.etatsNotifications[n.cle] || {};
+    return !e.lue && !e.archivee && !e.retiree;
+  }).length;
+  $("badgeAlertes").textContent = unread;
+  $("badgeAlertes").hidden = unread === 0;
+  $("notifications").title = unread + " notification(s) non lue(s)";
 }
 let chargementSignalements = false;
 async function chargerSignalements() {
@@ -1229,14 +1665,24 @@ async function chargerSignalements() {
   chargementSignalements = true;
   try {
     const [rows, informations, validations, etats] = await Promise.all([
-      api("/api/signalements"), user.role === "Administrateur" ? api("/api/notifications/reparations") : Promise.resolve([]),
-      api("/api/validations-equipements"), api("/api/notifications/etats"),
+      api("/api/signalements"),
+      user.role === "Administrateur"
+        ? api("/api/notifications/reparations")
+        : Promise.resolve([]),
+      api("/api/validations-equipements"),
+      api("/api/notifications/etats"),
     ]);
     if (state.user !== user) return;
-    if (!Array.isArray(rows)) throw new Error("Le format des signalements est incorrect.");
-    if (!Array.isArray(informations)) throw new Error("Le format des notifications est incorrect.");
-    if (!Array.isArray(validations)) throw new Error("Le format des validations est incorrect.");
-    state.validationsEquipements = validations.map((v) => ({...v,validationEquipement:true}));
+    if (!Array.isArray(rows))
+      throw new Error("Le format des signalements est incorrect.");
+    if (!Array.isArray(informations))
+      throw new Error("Le format des notifications est incorrect.");
+    if (!Array.isArray(validations))
+      throw new Error("Le format des validations est incorrect.");
+    state.validationsEquipements = validations.map((v) => ({
+      ...v,
+      validationEquipement: true,
+    }));
     state.signalements = rows;
     state.notificationsReparation = informations;
     state.etatsNotifications = etats;
@@ -1245,89 +1691,257 @@ async function chargerSignalements() {
     actualiserBadgeSignalements();
     if (state.page === "inventaire") renderTables();
   } catch (error) {
-    if (state.user === user) $("messageSignalements").textContent = error.message;
-  } finally { chargementSignalements = false; }
+    if (state.user === user)
+      $("messageSignalements").textContent = error.message;
+  } finally {
+    chargementSignalements = false;
+  }
 }
 let fenetreNotifications = null;
 async function changerEtatNotification(item, action, button, message) {
-  const user=state.user;button.disabled=true;
+  const user = state.user;
+  button.disabled = true;
   try {
-    const result=await api("/api/notifications/etat",jsonRequest("PUT",{cle:item.cle,action}));
-    if(state.user!==user)return;
-    state.etatsNotifications[result.cle]=result.etat;
-    afficherSignalements();actualiserBadgeSignalements();
-  } catch(error) { if(state.user===user)message.textContent=error.message; }
-  finally {button.disabled=false;}
+    const result = await api(
+      "/api/notifications/etat",
+      jsonRequest("PUT", { cle: item.cle, action }),
+    );
+    if (state.user !== user) return;
+    state.etatsNotifications[result.cle] = result.etat;
+    afficherSignalements();
+    actualiserBadgeSignalements();
+  } catch (error) {
+    if (state.user === user) message.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
 }
 function carteNotification(item) {
-  const report=item.report, etat=state.etatsNotifications[item.cle] || {};
-  const article=node("article","report-item");
-  article.append(node("h3","",report.equipement_nom));
-  article.append(node("p","",etat.retiree?"Retirée de l’affichage":etat.archivee?"Archivée":etat.lue?"Lue":"Non lue"));
-  if(item.source==="i") {
-    article.append(node("p","",report.employe_nom+" · "+new Date(item.date).toLocaleString("fr-CA")),node("p","report-description",report.note),node("p","",(report.type_mouvement || "Mise en réparation")+" — aucune approbation requise."));
+  const report = item.report,
+    etat = state.etatsNotifications[item.cle] || {};
+  const article = node("article", "report-item");
+  article.append(node("h3", "", report.equipement_nom));
+  article.append(
+    node(
+      "p",
+      "",
+      etat.retiree
+        ? "Retirée de l’affichage"
+        : etat.archivee
+          ? "Archivée"
+          : etat.lue
+            ? "Lue"
+            : "Non lue",
+    ),
+  );
+  if (item.source === "i") {
+    article.append(
+      node(
+        "p",
+        "",
+        report.employe_nom +
+          " · " +
+          new Date(item.date).toLocaleString("fr-CA"),
+      ),
+      node("p", "report-description", report.note),
+      node(
+        "p",
+        "",
+        (report.type_mouvement || "Mise en réparation") +
+          " — aucune approbation requise.",
+      ),
+    );
   } else {
-    article.append(node("p","",report.employe_nom+" · "+report.type_signalement),node("p","","Signalé le "+new Date(report.date_signalement).toLocaleString("fr-CA")+" · "+report.statut),node("p","report-description",report.description));
-    if(report.statut!=="En attente") {
-      article.append(node("p","","Décision : "+report.statut+(report.administrateur_nom?" · "+report.administrateur_nom:"")));
-      if(report.commentaire)article.append(node("p","report-description",report.commentaire));
+    article.append(
+      node("p", "", report.employe_nom + " · " + report.type_signalement),
+      node(
+        "p",
+        "",
+        "Signalé le " +
+          new Date(report.date_signalement).toLocaleString("fr-CA") +
+          " · " +
+          report.statut,
+      ),
+      node("p", "report-description", report.description),
+    );
+    if (report.statut !== "En attente") {
+      article.append(
+        node(
+          "p",
+          "",
+          "Décision : " +
+            report.statut +
+            (report.administrateur_nom
+              ? " · " + report.administrateur_nom
+              : ""),
+        ),
+      );
+      if (report.commentaire)
+        article.append(node("p", "report-description", report.commentaire));
     }
-    if(state.user?.role==="Administrateur"&&report.statut==="En attente") {
-      const decisions=node("div","form-actions");
-      for(const [label,decision]of [["Accepter","Acceptée"],["Refuser","Refusée"]]) {
-        const button=node("button","action-button",label);button.type="button";
-        button.addEventListener("click",()=>report.validationEquipement?ouvrirDecisionValidation(report,decision):ouvrirDecisionSignalement(report,decision));decisions.append(button);
+    if (
+      state.user?.role === "Administrateur" &&
+      report.statut === "En attente"
+    ) {
+      const decisions = node("div", "form-actions");
+      for (const [label, decision] of [
+        ["Accepter", "Acceptée"],
+        ["Refuser", "Refusée"],
+      ]) {
+        const button = node("button", "action-button", label);
+        button.type = "button";
+        button.addEventListener("click", () =>
+          report.validationEquipement
+            ? ouvrirDecisionValidation(report, decision)
+            : ouvrirDecisionSignalement(report, decision),
+        );
+        decisions.append(button);
       }
       article.append(decisions);
     }
   }
-  const actions=node("div","form-actions"),message=node("p");message.setAttribute("role","status");
-  const options=etat.archivee||etat.retiree?[["Réafficher","restaurer"]]:[["Marquer comme lue","lire"],["Archiver","archiver"],["Retirer de l’affichage","retirer"]];
-  for(const [label,action]of options) {
-    const button=node("button","action-button",label);button.type="button";button.disabled=action==="lire"&&!!etat.lue;
-    button.addEventListener("click",()=>changerEtatNotification(item,action,button,message));actions.append(button);
+  const actions = node("div", "form-actions"),
+    message = node("p");
+  message.setAttribute("role", "status");
+  const options =
+    etat.archivee || etat.retiree
+      ? [["Réafficher", "restaurer"]]
+      : [
+          ["Marquer comme lue", "lire"],
+          ["Archiver", "archiver"],
+          ["Retirer de l’affichage", "retirer"],
+        ];
+  for (const [label, action] of options) {
+    const button = node("button", "action-button", label);
+    button.type = "button";
+    button.disabled = action === "lire" && !!etat.lue;
+    button.addEventListener("click", () =>
+      changerEtatNotification(item, action, button, message),
+    );
+    actions.append(button);
   }
-  article.append(actions,message);return article;
+  article.append(actions, message);
+  return article;
 }
 function afficherSignalements() {
-  const entries=toutesNotifications(),container=$("listeSignalements");container.replaceChildren();
-  const pending=[...state.signalements,...state.validationsEquipements].filter(s=>s.statut==="En attente").length;
-  $("nombreSignalements").textContent=pending?"· "+pending+" en attente":"";
-  const visible=entries.filter(item=>{const e=state.etatsNotifications[item.cle] || {};return !e.archivee&&!e.retiree;}).slice(0,3);
-  for(const item of visible)container.append(carteNotification(item));
-  if(!visible.length)container.append(node("p","empty","Aucune notification à afficher."));
-  if(fenetreNotifications?.isConnected)rafraichirToutesNotifications();
+  const entries = toutesNotifications(),
+    container = $("listeSignalements");
+  container.replaceChildren();
+  const pending = [
+    ...state.signalements,
+    ...state.validationsEquipements,
+  ].filter((s) => s.statut === "En attente").length;
+  $("nombreSignalements").textContent = pending
+    ? "· " + pending + " en attente"
+    : "";
+  const visible = entries
+    .filter((item) => {
+      const e = state.etatsNotifications[item.cle] || {};
+      return !e.archivee && !e.retiree;
+    })
+    .slice(0, 3);
+  for (const item of visible) container.append(carteNotification(item));
+  if (!visible.length)
+    container.append(node("p", "empty", "Aucune notification à afficher."));
+  if (fenetreNotifications?.isConnected) rafraichirToutesNotifications();
 }
 function rafraichirToutesNotifications() {
-  const dialog=fenetreNotifications,select=dialog.querySelector("select"),container=dialog.querySelector(".notifications-list");container.replaceChildren();
-  const entries=toutesNotifications().filter(item=>{const e=state.etatsNotifications[item.cle] || {};return select.value==="toutes"||select.value==="attente"&&item.source!=="i"&&item.report.statut==="En attente"||select.value==="archivees"&&e.archivee||select.value==="retirees"&&e.retiree||select.value==="actives"&&!e.archivee&&!e.retiree;});
-  for(const item of entries)container.append(carteNotification(item));
-  if(!entries.length)container.append(node("p","empty","Aucune notification dans cette liste."));
-}
-function ouvrirToutesNotifications(filtre="toutes") {
-  if(!state.user)return;
-  if(fenetreNotifications?.isConnected){fenetreNotifications.querySelector("select").value=filtre;rafraichirToutesNotifications();return;}
-  const dialog=node("dialog","assignment-dialog notifications-dialog");fenetreNotifications=dialog;
-  dialog.setAttribute("aria-label","Toutes les notifications");
-  const label=node("label","","Afficher"),select=node("select");
-  for(const [value,text]of [["toutes","Toutes"],["actives","Actives"],["archivees","Archivées"],["retirees","Retirées"]]){const option=node("option","",text);option.value=value;select.append(option);}
-  const pendingOption=node("option","",state.user.role==="Administrateur"?"Demandes à traiter":"Mes demandes en attente");pendingOption.value="attente";select.append(pendingOption);select.value=filtre;
-  select.addEventListener("change",rafraichirToutesNotifications);label.append(select);
-  const content=node("div","notifications-list");
-  dialog.addEventListener("close",()=>{dialog.remove();if(fenetreNotifications===dialog)fenetreNotifications=null;},{once:true});
-  const header=node("div","notifications-dialog-header"),cross=node("button","action-button notifications-close","×");
-  cross.type="button";cross.setAttribute("aria-label","Fermer les notifications");cross.title="Fermer";
-  cross.addEventListener("click",()=>dialog.close());
-  header.append(node("h2","","Toutes les notifications"),cross);
-  dialog.addEventListener("cancel",event=>{event.preventDefault();dialog.close();});
-  dialog.addEventListener("click",event=>{
-    if(event.target!==dialog)return;
-    const rect=dialog.getBoundingClientRect();
-    if(event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom)dialog.close();
+  const dialog = fenetreNotifications,
+    select = dialog.querySelector("select"),
+    container = dialog.querySelector(".notifications-list");
+  container.replaceChildren();
+  const entries = toutesNotifications().filter((item) => {
+    const e = state.etatsNotifications[item.cle] || {};
+    return (
+      select.value === "toutes" ||
+      (select.value === "attente" &&
+        item.source !== "i" &&
+        item.report.statut === "En attente") ||
+      (select.value === "archivees" && e.archivee) ||
+      (select.value === "retirees" && e.retiree) ||
+      (select.value === "actives" && !e.archivee && !e.retiree)
+    );
   });
-  dialog.append(header,label,content);document.body.append(dialog);rafraichirToutesNotifications();dialog.showModal();
+  for (const item of entries) container.append(carteNotification(item));
+  if (!entries.length)
+    container.append(
+      node("p", "empty", "Aucune notification dans cette liste."),
+    );
 }
-$("voirToutesNotifications").addEventListener("click",event=>{event.preventDefault();ouvrirToutesNotifications();});
+function ouvrirToutesNotifications(filtre = "toutes") {
+  if (!state.user) return;
+  if (fenetreNotifications?.isConnected) {
+    fenetreNotifications.querySelector("select").value = filtre;
+    rafraichirToutesNotifications();
+    return;
+  }
+  const dialog = node("dialog", "assignment-dialog notifications-dialog");
+  fenetreNotifications = dialog;
+  dialog.setAttribute("aria-label", "Toutes les notifications");
+  const label = node("label", "", "Afficher"),
+    select = node("select");
+  for (const [value, text] of [
+    ["toutes", "Toutes"],
+    ["actives", "Actives"],
+    ["archivees", "Archivées"],
+    ["retirees", "Retirées"],
+  ]) {
+    const option = node("option", "", text);
+    option.value = value;
+    select.append(option);
+  }
+  const pendingOption = node(
+    "option",
+    "",
+    state.user.role === "Administrateur"
+      ? "Demandes à traiter"
+      : "Mes demandes en attente",
+  );
+  pendingOption.value = "attente";
+  select.append(pendingOption);
+  select.value = filtre;
+  select.addEventListener("change", rafraichirToutesNotifications);
+  label.append(select);
+  const content = node("div", "notifications-list");
+  dialog.addEventListener(
+    "close",
+    () => {
+      dialog.remove();
+      if (fenetreNotifications === dialog) fenetreNotifications = null;
+    },
+    { once: true },
+  );
+  const header = node("div", "notifications-dialog-header"),
+    cross = node("button", "action-button notifications-close", "×");
+  cross.type = "button";
+  cross.setAttribute("aria-label", "Fermer les notifications");
+  cross.title = "Fermer";
+  cross.addEventListener("click", () => dialog.close());
+  header.append(node("h2", "", "Toutes les notifications"), cross);
+  dialog.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    dialog.close();
+  });
+  dialog.addEventListener("click", (event) => {
+    if (event.target !== dialog) return;
+    const rect = dialog.getBoundingClientRect();
+    if (
+      event.clientX < rect.left ||
+      event.clientX > rect.right ||
+      event.clientY < rect.top ||
+      event.clientY > rect.bottom
+    )
+      dialog.close();
+  });
+  dialog.append(header, label, content);
+  document.body.append(dialog);
+  rafraichirToutesNotifications();
+  dialog.showModal();
+}
+$("voirToutesNotifications").addEventListener("click", (event) => {
+  event.preventDefault();
+  ouvrirToutesNotifications();
+});
 function fenetreSignalement(titleText, labelText, required, confirmText, save) {
   const user = state.user;
   const dialog = node("dialog", "assignment-dialog");
@@ -1350,16 +1964,26 @@ function fenetreSignalement(titleText, labelText, required, confirmText, save) {
   const cancel = node("button", "action-button", "Annuler");
   cancel.type = "button";
   let sending = false;
-  input.addEventListener("input", () => { confirm.disabled = sending || (required && !input.value.trim()); });
+  input.addEventListener("input", () => {
+    confirm.disabled = sending || (required && !input.value.trim());
+  });
   cancel.addEventListener("click", () => dialog.close());
-  dialog.addEventListener("cancel", (event) => { if (sending) event.preventDefault(); });
+  dialog.addEventListener("cancel", (event) => {
+    if (sending) event.preventDefault();
+  });
   dialog.addEventListener("close", () => dialog.remove(), { once: true });
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     if (sending) return;
-    if (state.user !== user) { dialog.close(); return; }
+    if (state.user !== user) {
+      dialog.close();
+      return;
+    }
     const value = input.value.trim();
-    if (required && !value) { message.textContent = labelText; return; }
+    if (required && !value) {
+      message.textContent = labelText;
+      return;
+    }
     sending = true;
     confirm.disabled = cancel.disabled = input.disabled = true;
     message.textContent = "Enregistrement…";
@@ -1389,41 +2013,101 @@ function fenetreSignalement(titleText, labelText, required, confirmText, save) {
 }
 function ouvrirSignalement(e, type) {
   if (state.user?.role !== "Employé") return;
-  const allowed = type === "En réparation" ? ["Disponible", "Attribué"]
-    : ["Disponible", "Attribué", "En réparation", "En attente de retour"];
+  const allowed =
+    type === "En réparation"
+      ? ["Disponible", "Attribué"]
+      : ["Disponible", "Attribué", "En réparation", "En attente de retour"];
   if (!allowed.includes(e.etat)) {
-    $(state.page === "ajouter" ? "messageEquipement" : "messageInventaire").textContent = "Cet équipement ne peut pas être signalé dans son état actuel. Aucun changement enregistré.";
+    $(
+      state.page === "ajouter" ? "messageEquipement" : "messageInventaire",
+    ).textContent =
+      "Cet équipement ne peut pas être signalé dans son état actuel. Aucun changement enregistré.";
     return;
   }
-  fenetreSignalement("Signaler : " + type + " · " + e.nom, "Description du problème (obligatoire)", true, "Soumettre",
-    (description) => api("/api/signalements", jsonRequest("POST", {
-      equipement_id: Number(e.id), type_signalement: type, description,
-    })));
+  fenetreSignalement(
+    "Signaler : " + type + " · " + e.nom,
+    "Description du problème (obligatoire)",
+    true,
+    "Soumettre",
+    (description) =>
+      api(
+        "/api/signalements",
+        jsonRequest("POST", {
+          equipement_id: Number(e.id),
+          type_signalement: type,
+          description,
+        }),
+      ),
+  );
 }
 function ouvrirDecisionValidation(e, decision) {
   if (state.user?.role !== "Administrateur") return;
-  fenetreSignalement((decision === "Acceptée" ? "Valider" : "Refuser") + " · " + (e.equipement_nom || e.nom),
-    decision === "Refusée" ? "Motif du refus (obligatoire)" : "Commentaire (facultatif)",
-    decision === "Refusée", "Confirmer",
-    (commentaire) => api(`/api/equipements/${e.equipement_id || e.id}/validation${decision === "Refusée" ? "/refus" : ""}`,jsonRequest("PUT",{commentaire})));
+  fenetreSignalement(
+    (decision === "Acceptée" ? "Valider" : "Refuser") +
+      " · " +
+      (e.equipement_nom || e.nom),
+    decision === "Refusée"
+      ? "Motif du refus (obligatoire)"
+      : "Commentaire (facultatif)",
+    decision === "Refusée",
+    "Confirmer",
+    (commentaire) =>
+      api(
+        `/api/equipements/${e.equipement_id || e.id}/validation${decision === "Refusée" ? "/refus" : ""}`,
+        jsonRequest("PUT", { commentaire }),
+      ),
+  );
 }
 function ouvrirDecisionSignalement(report, decision) {
   if (state.user?.role !== "Administrateur") return;
   if (decision === "Acceptée" && report.unite_id == null) {
-    const units=(state.equipments || []).filter((u)=>u.equipement_origine_id===report.equipement_origine_id);
-    if(!units.length){afficherMessageAction("Les unités de cette ancienne demande sont indisponibles.");return;}
-    choisirUnite({nom:report.equipement_nom,unites:units},async(unit)=>{
-      try{await api(`/api/signalements/${report.id}/unite`,jsonRequest("PUT",{unite_id:unit.id}));
-        ouvrirDecisionSignalement({...report,unite_id:unit.id,equipement_id:unit.id},decision);
-      }catch(error){afficherMessageAction(error.message);}
-    });return;
+    const units = (state.equipments || []).filter(
+      (u) => u.equipement_origine_id === report.equipement_origine_id,
+    );
+    if (!units.length) {
+      afficherMessageAction(
+        "Les unités de cette ancienne demande sont indisponibles.",
+      );
+      return;
+    }
+    choisirUnite(
+      { nom: report.equipement_nom, unites: units },
+      async (unit) => {
+        try {
+          await api(
+            `/api/signalements/${report.id}/unite`,
+            jsonRequest("PUT", { unite_id: unit.id }),
+          );
+          ouvrirDecisionSignalement(
+            { ...report, unite_id: unit.id, equipement_id: unit.id },
+            decision,
+          );
+        } catch (error) {
+          afficherMessageAction(error.message);
+        }
+      },
+    );
+    return;
   }
-  fenetreSignalement((decision === "Acceptée" ? "Accepter" : "Refuser") + " · " + report.equipement_nom,
-    decision === "Refusée" ? "Motif du refus (obligatoire)" : "Commentaire (facultatif)",
-    decision === "Refusée", "Confirmer",
-    (commentaire) => api(`/api/signalements/${report.id}/decision`, jsonRequest("PUT", {decision, commentaire})));
+  fenetreSignalement(
+    (decision === "Acceptée" ? "Accepter" : "Refuser") +
+      " · " +
+      report.equipement_nom,
+    decision === "Refusée"
+      ? "Motif du refus (obligatoire)"
+      : "Commentaire (facultatif)",
+    decision === "Refusée",
+    "Confirmer",
+    (commentaire) =>
+      api(
+        `/api/signalements/${report.id}/decision`,
+        jsonRequest("PUT", { decision, commentaire }),
+      ),
+  );
 }
 // Les sessions expirées restent gérées par api(); la cloche se met à jour sans rechargement manuel.
-window.setInterval(() => { if (state.user) chargerSignalements(); }, 20000);
+window.setInterval(() => {
+  if (state.user) chargerSignalements();
+}, 20000);
 
 verifierSession();
