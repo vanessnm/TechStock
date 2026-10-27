@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>TechStock — Inventaire. Simplement.</title>
     <link rel="stylesheet" href="style.css" />
-    <script defer src="script.js"></script>
+    <script defer src="script.js?v=6381c87bd486"></script>
   </head>
   <body>
     <section id="sectionConnexion" class="login">
@@ -217,12 +217,10 @@
                     <div id="legendeStatuts"></div>
                   </div>
                 </section>
-                <section class="card">
-                  <div class="card-heading"><h2>Activité récente</h2></div>
-                  <p class="empty">
-                    L’historique d’activité n’est pas fourni par le backend
-                    actuel.
-                  </p>
+                <section class="card" id="carteSignalements">
+                  <div class="card-heading"><h2>Signalements d’équipements <span id="nombreSignalements"></span></h2></div>
+                  <p id="messageSignalements" role="status"></p>
+                  <div id="listeSignalements"></div>
                 </section>
               </div>
             </div>
@@ -311,6 +309,8 @@
                     step="1"
                     required
                     value="0" /></label
+                ><label id="champStatut" hidden>Statut<select id="statutEquipement"></select></label
+                ><label id="champDetailStatut" hidden></label
                 ><label class="wide"
                   >Description<textarea name="description" rows="4"></textarea>
                 </label>

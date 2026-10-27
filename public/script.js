@@ -2,6 +2,9 @@
 const $ = (id) => document.getElementById(id);
 const state = {
   user: null,
+  signalements: [],
+  validationsEquipements: [],
+  notificationsReparation: [],
   equipments: null,
   editing: null,
   page: "tableau-de-bord",
@@ -52,6 +55,11 @@ function node(tag, className, text) {
 }
 function resetSession(message = "") {
   state.user = null;
+  state.signalements = [];
+  state.validationsEquipements = [];
+  state.notificationsReparation = [];
+  $("listeSignalements").replaceChildren();
+  $("messageSignalements").textContent = "";
   state.equipments = null;
   state.editing = null;
   state.query = "";
@@ -154,6 +162,7 @@ async function verifierSession() {
         node("dd", "", value || "—"),
       );
     await chargerInventaire();
+    await chargerSignalements();
     afficherPage();
   } catch (error) {
     if (!state.user) $("messageConnexion").textContent = error.message;
@@ -393,8 +402,7 @@ function renderAlerts() {
     ),
   );
   const count = low.length + repair.length + replace.length;
-  $("badgeAlertes").textContent = count;
-  $("badgeAlertes").hidden = count === 0;
+  actualiserBadgeSignalements(count);
 }
 function renderStatus() {
   const entries = group("etat");
@@ -508,18 +516,299 @@ function drawTable(id, equipments, recent) {
       node("td", "", recent ? formattedDate(e) : (e.quantite ?? "—")),
     );
     if (!recent) {
-      const actions = node("td"),
-        button = node("button", "action-button", "Modifier");
-      button.type = "button";
-      button.addEventListener("click", () => {
-        state.editing = e;
-        location.hash = "ajouter";
-        if (state.page === "ajouter") prepareEquipmentForm();
+      const actions = node("td");
+      const menu = node("select", "action-button equipment-actions");
+      menu.setAttribute("aria-label", `Actions pour ${e.nom}`);
+      const placeholder = node("option", "", "Select");
+      placeholder.value = "";
+      placeholder.hidden = true;
+      placeholder.disabled = true;
+      placeholder.selected = true;
+      menu.append(placeholder);
+      const available = equipmentActions(e);
+      for (const action of available) {
+        const option = node("option", "", action.label);
+        option.value = action.id;
+        menu.append(option);
+      }
+      menu.addEventListener("change", () => {
+        const action = available.find((item) => item.id === menu.value);
+        menu.value = "";
+        try { action?.run(); }
+        catch (error) { $("messageInventaire").textContent = error.message; }
       });
-      actions.append(button);
+      actions.append(menu);
       row.append(actions);
     }
     body.append(row);
+  }
+}
+// Les mêmes choix restent visibles; chaque exécution contrôle les permissions.
+function equipmentActions(e) {
+  const actions = [
+    { id: "modifier", label: "Modifier", run: () => {
+      state.editing = e;
+      location.hash = "ajouter";
+      afficherPage();
+    } },
+    { id: "attribuer", label: "Attribuer à un employé", run: () => executerActionStatut(e, "Attribué") },
+    { id: "disponible", label: "Disponible", run: () => executerActionStatut(e, "Disponible") },
+    { id: "reparation", label: "En réparation", run: () => executerActionStatut(e, "En réparation") },
+    { id: "perdu-vole", label: "Perdu / Volé", run: () => executerActionStatut(e, "Perdu / Volé") },
+    { id: "hors-service", label: "À remplacer / Hors service", run: () => executerActionStatut(e, "À remplacer / Hors service") },
+  ];
+  if (state.user?.role === "Administrateur") {
+    const decision = state.validationsEquipements.find((v) => v.equipement_id === e.id);
+    if (e.etat === "En attente de validation" && decision?.statut !== "Refusée") {
+      actions.push({id:"valider",label:"Valider",run:()=>ouvrirDecisionValidation(e,"Acceptée")},
+        {id:"refuser-ajout",label:"Refuser",run:()=>ouvrirDecisionValidation(e,"Refusée")});
+    }
+    return actions;
+  }
+  if (state.user?.role === "Employé") return actions
+    .filter((action) => ["modifier", "disponible", "reparation", "perdu-vole", "hors-service"].includes(action.id))
+    .map((action) => ({ ...action, label: {
+      reparation: "En réparation",
+      "perdu-vole": "Signaler Perdu / Volé",
+      "hors-service": "Signaler À remplacer / Hors service",
+    }[action.id] || action.label }));
+  return [];
+}
+function afficherMessageAction(text) {
+  const message = $(state.page === "ajouter" ? "messageEquipement" : "messageInventaire");
+  message.textContent = text;
+  message.setAttribute("role", "alert");
+  message.scrollIntoView?.({behavior:"smooth",block:"center"});
+}
+function raisonRefusDisponible(e) {
+  if (e.etat === "À remplacer / Hors service")
+    return "Cet équipement est « À remplacer / Hors service ». Seul un administrateur peut le remettre en service au statut Disponible. Aucun changement enregistré.";
+  if (e.etat === "En attente de validation")
+    return "Cet équipement attend sa validation par un administrateur. Un employé ne peut pas le rendre Disponible. Aucun changement enregistré.";
+  if (state.signalements.some((s) => s.equipement_id === e.id && s.statut === "En attente"))
+    return "Un signalement est en attente. Un administrateur doit le traiter avant le retour à Disponible. Aucun changement enregistré.";
+  if (e.attribue_a_id != null && e.attribue_a_id !== state.user?.id)
+    return "Cet équipement est attribué à un autre employé. Son détenteur ou un administrateur doit confirmer le retour. Aucun changement enregistré.";
+  if (e.attribue_a_id != null || e.date_attribution != null)
+    return "Une attribution active empêche ce changement. Un administrateur doit vérifier l’équipement. Aucun changement enregistré.";
+  return "Le retour à Disponible n’est pas autorisé depuis ce statut pour votre rôle. Aucun changement enregistré.";
+}
+function informerHorsService() {
+  const dialog = node("dialog", "assignment-dialog");
+  dialog.setAttribute("role", "alertdialog");
+  dialog.setAttribute("aria-label", "Équipement hors service");
+  dialog.setAttribute("aria-describedby", "messageHorsService");
+  const message = node("p", "", "Cet équipement est déclaré hors service. Seul un administrateur peut le remettre au statut Disponible.");
+  message.id = "messageHorsService";
+  const button = node("button", "action-button", "OK");
+  button.type = "button";
+  button.addEventListener("click", () => dialog.close());
+  dialog.addEventListener("close", () => dialog.remove(), {once:true});
+  dialog.append(message, button);
+  document.body.append(dialog);
+  dialog.showModal();
+  button.focus();
+}
+function executerActionStatut(e, status) {
+  if (state.user?.role === "Employé" && status === "Disponible" && e.etat === "À remplacer / Hors service") {
+    informerHorsService();
+    return;
+  }
+  const message = $(state.page === "ajouter" ? "messageEquipement" : "messageInventaire");
+  if (state.user?.role === "Employé" && ["Perdu / Volé", "À remplacer / Hors service"].includes(status)) {
+    ouvrirSignalement(e, status);
+    return;
+  }
+  if (state.user?.role !== "Administrateur" && !(state.user?.role === "Employé" && ["Disponible", "En réparation"].includes(status))) {
+    afficherMessageAction("Cette action est réservée à l’administrateur.");
+    return;
+  }
+  if (e.etat === status) {
+    afficherMessageAction(`Cet équipement est déjà au statut « ${status} ».`);
+    return;
+  }
+  const transition = statusTransitions(e).find((t) => t.status === status);
+  if (!transition) {
+    afficherMessageAction(state.user?.role === "Employé" && status === "Disponible"
+      ? raisonRefusDisponible(e)
+      : `Le passage de « ${e.etat} » à « ${status} » n’est pas pris en charge pour votre rôle. Aucun changement enregistré.`);
+    return;
+  }
+  message.textContent = "";
+  if (status === "Attribué") return ouvrirAttribution(e);
+  ouvrirActionStatut(e, transition);
+}
+function ouvrirActionStatut(e, transition) {
+  const sessionUser = state.user;
+  const dialog = node("dialog", "assignment-dialog");
+  const title = node("h2", "", transition.status);
+  title.id = "titreActionStatut";
+  dialog.setAttribute("aria-labelledby", title.id);
+  const form = node("form");
+  let input;
+  if (transition.field) {
+    const label = node("label", "", transition.label);
+    input = node("input");
+    input.required = state.user?.role === "Employé" && transition.status === "En réparation";
+    label.append(input);
+    form.append(label);
+  }
+  let retour;
+  if (transition.returnRequired || transition.reactivationRequired) {
+    const label = node("label", "", "Je confirme vouloir changer le statut de cet équipement à « Disponible ».");
+    retour = node("input"); retour.type = "checkbox"; retour.required = true; retour.style.width = "auto"; retour.style.justifySelf = "start";
+    label.append(retour); form.append(label);
+  }
+  const message = node("p");
+  message.setAttribute("role", "status");
+  const buttons = node("div", "form-actions");
+  const submit = node("button", "action-button", "Confirmer");
+  submit.type = "submit";
+  submit.disabled = !!retour;
+  if (retour) retour.addEventListener("change", () => { submit.disabled = sending || !retour.checked; });
+  const cancel = node("button", "action-button", "Annuler");
+  cancel.type = "button";
+  cancel.addEventListener("click", () => dialog.close());
+  buttons.append(submit, cancel);
+  form.append(message, buttons);
+  dialog.append(title, node("p", "", e.nom), form);
+  document.body.append(dialog);
+  dialog.addEventListener("close", () => dialog.remove(), { once: true });
+  let sending = false;
+  dialog.addEventListener("cancel", (event) => { if (sending) event.preventDefault(); });
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (sending) return;
+    if (state.user !== sessionUser) { dialog.close(); return; }
+    if (!statusTransitions(e).some((t) => t.route === transition.route)) {
+      message.textContent = "Cette transition n’est plus autorisée.";
+      return;
+    }
+    const body = transition.adminStatus ? {etat:transition.status} : {};
+    if (retour) { if (!retour.checked) { message.textContent = "Je confirme vouloir changer le statut de cet équipement à « Disponible »."; return; } body[transition.reactivationRequired ? "confirmer_remise_service" : "confirmer_retour"] = true; }
+    if (transition.field) {
+      const value = input.value.trim();
+      if (input.required && !value) { message.textContent = "La description du problème est obligatoire."; return; }
+      body[transition.field] = value;
+    }
+    sending = true;
+    submit.disabled = cancel.disabled = true;
+    if (input) input.disabled = true;
+    message.textContent = "Enregistrement…";
+    try {
+      const result = await api(
+        `/api/equipements/${encodeURIComponent(e.id)}/${transition.route}`,
+        jsonRequest("PUT", body),
+      );
+      dialog.close();
+      await chargerInventaire();
+      await chargerSignalements();
+      if (state.user === sessionUser) {
+        synchroniserStatutEdition(state.equipments ? result.message || "Opération enregistrée." : "Opération enregistrée ; actualisation indisponible.");
+        $("messageInventaire").textContent = state.equipments
+          ? result.message || "Statut mis à jour."
+          : "Statut enregistré. Actualisation impossible : " + $("messageInventaire").textContent;
+      }
+    } catch (error) {
+      if (state.user !== sessionUser) dialog.close();
+      else message.textContent = error.message;
+    } finally {
+      sending = false;
+      cancel.disabled = false;
+      submit.disabled = !!retour && !retour.checked;
+      if (input) input.disabled = false;
+    }
+  });
+  dialog.showModal();
+}
+async function ouvrirAttribution(e) {
+  if (state.user?.role !== "Administrateur") return;
+  const sessionUser = state.user;
+  const dialog = node("dialog", "assignment-dialog");
+  dialog.setAttribute("aria-labelledby", "titreAttribution");
+  const title = node("h2", "", "Attribuer à un employé");
+  title.id = "titreAttribution";
+  const form = node("form");
+  const label = node("label", "", "Employé actif");
+  const select = node("select");
+  select.required = true;
+  select.disabled = true;
+  label.append(select);
+  const message = node("p", "", "Chargement des employés…");
+  message.setAttribute("role", "status");
+  const buttons = node("div", "form-actions");
+  const submit = node("button", "action-button", "Confirmer l’attribution");
+  submit.type = "submit";
+  submit.disabled = true;
+  const cancel = node("button", "action-button", "Annuler");
+  cancel.type = "button";
+  cancel.addEventListener("click", () => dialog.close());
+  buttons.append(submit, cancel);
+  form.append(label, message, buttons);
+  dialog.append(title, node("p", "", e.nom), form);
+  document.body.append(dialog);
+  dialog.addEventListener("close", () => dialog.remove(), { once: true });
+  let sending = false;
+  dialog.addEventListener("cancel", (event) => {
+    if (sending) event.preventDefault();
+  });
+  dialog.showModal();
+  let employees = [];
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (sending || state.user !== sessionUser) return;
+    const id = Number(select.value);
+    const employee = employees.find((user) => Number(user.id) === id);
+    if (!Number.isInteger(id) || id <= 0 || !employee) {
+      message.textContent = "Sélectionnez un employé actif.";
+      return;
+    }
+    if (!window.confirm(`Attribuer « ${e.nom} » à ${employee.nom} ?`)) return;
+    sending = true;
+    submit.disabled = select.disabled = cancel.disabled = true;
+    message.textContent = "Attribution en cours…";
+    try {
+      const result = await api(
+        `/api/equipements/${encodeURIComponent(e.id)}/statut-administrateur`,
+        jsonRequest("PUT", { etat:"Attribué", utilisateur_id: id }),
+      );
+      dialog.close();
+      await chargerInventaire();
+      if (state.user === sessionUser) {
+        $("messageInventaire").textContent = state.equipments
+          ? result.message || "Équipement attribué avec succès."
+          : "Attribution réussie. Actualisation impossible : " + $("messageInventaire").textContent;
+      }
+    } catch (error) {
+      if (state.user !== sessionUser) dialog.close();
+      else message.textContent = error.message;
+    } finally {
+      sending = false;
+      submit.disabled = select.disabled = cancel.disabled = false;
+    }
+  });
+  try {
+    const users = await api("/api/utilisateurs");
+    if (!dialog.isConnected) return;
+    if (state.user !== sessionUser) { dialog.close(); return; }
+    if (!Array.isArray(users)) throw new Error("Le format des utilisateurs est incorrect.");
+    employees = users.filter((user) => user.role === "Employé" &&
+      (user.actif === true || user.actif === 1) &&
+      Number.isInteger(Number(user.id)) && Number(user.id) > 0);
+    const placeholder = node("option", "", "Sélectionner un employé…");
+    placeholder.value = "";
+    select.append(placeholder);
+    for (const employee of employees) {
+      const option = node("option", "", `${employee.nom} (${employee.email})`);
+      option.value = employee.id;
+      select.append(option);
+    }
+    message.textContent = employees.length ? "" : "Aucun employé actif disponible.";
+    select.disabled = submit.disabled = !employees.length;
+    if (employees.length) select.focus();
+  } catch (error) {
+    if (state.user !== sessionUser) dialog.close();
+    else message.textContent = error.message;
   }
 }
 const pages = {
@@ -558,7 +847,20 @@ function afficherPage() {
   if (page === "inventaire") renderTables();
   window.scrollTo(0, 0);
 }
-window.addEventListener("hashchange", afficherPage);
+window.addEventListener("hashchange", () => {
+  if ((location.hash.slice(1) || "tableau-de-bord") !== state.page) afficherPage();
+});
+document.querySelectorAll('[data-page="inventaire"]').forEach((link) => {
+  link.addEventListener("click", async (event) => {
+    event.preventDefault();
+    state.query = ""; state.status = "";
+    $("recherche").value = ""; $("filtreStatut").value = "";
+    location.hash = "inventaire";
+    afficherPage();
+    await chargerInventaire();
+    await chargerSignalements();
+  });
+});
 $("recherche").addEventListener("input", () => {
   state.query = $("recherche").value.trim();
   if (state.page !== "inventaire") location.hash = "inventaire";
@@ -571,17 +873,157 @@ $("filtreStatut").addEventListener("change", () => {
 $("notifications").addEventListener("click", () => {
   location.hash = "tableau-de-bord";
   afficherPage();
-  $("carteAlertes").scrollIntoView({ behavior: "smooth", block: "center" });
+  marquerNotificationsReparationLues();
+  marquerValidationsLues();
+  chargerSignalements();
+  $("carteSignalements").scrollIntoView({ behavior: "smooth", block: "center" });
 });
+// Transitions exposées par les routes métier actuelles de app.js.
+function statusTransitions(e) {
+  if (state.user?.role === "Employé") {
+    const transitions = [];
+    const pending = state.signalements.some((s) => s.equipement_id === e.id && s.statut === "En attente");
+    const retour = ["Attribué","En attente de retour"].includes(e.etat);
+    if (!pending && e.etat === "En réparation" && (e.attribue_a_id == null || e.attribue_a_id === state.user.id))
+      transitions.push({status:"Disponible",route:"reparation/fin",field:"resolution",label:"Commentaire (facultatif)",returnRequired:true});
+    if (!pending && ((retour && e.attribue_a_id === state.user.id) ||
+      (e.etat === "Perdu / Volé" && e.attribue_a_id == null && e.date_attribution == null)))
+      transitions.push({status:"Disponible",route:"disponibilite",field:"commentaire",label:"Commentaire (facultatif)",returnRequired:true});
+    if (!pending && ["Disponible","Attribué"].includes(e.etat) && (e.attribue_a_id == null || e.attribue_a_id === state.user.id))
+      transitions.push({status:"En réparation",route:"reparation",field:"raison",label:"Description du problème (obligatoire)",required:true});
+    if (["Disponible","Attribué","En réparation","En attente de retour"].includes(e.etat))
+      for (const status of ["Perdu / Volé","À remplacer / Hors service"])
+        transitions.push({status,signalement:true,field:"description",label:"Description du problème (obligatoire)",required:true});
+    return transitions;
+  }
+  if (state.user?.role !== "Administrateur") return [];
+  return equipmentStatuses.map((status) => ({
+    status,route:"statut-administrateur",adminStatus:true,
+    field:["Attribué","En attente de retour"].includes(status)?"utilisateur_id":"commentaire",
+    label:["Attribué","En attente de retour"].includes(status)?"Employé actif":{
+      "En réparation":"Raison de la réparation / Commentaire (facultatif)",
+      "Perdu / Volé":"Raison de la perte ou du vol / Commentaire (facultatif)",
+      "À remplacer / Hors service":"Raison du remplacement ou de la mise hors service / Commentaire (facultatif)",
+    }[status] || "Commentaire (facultatif)",
+  }));
+}
+const equipmentStatuses = [
+  "Disponible", "Attribué", "En réparation", "En attente de retour",
+  "En attente de validation", "Perdu / Volé", "À remplacer / Hors service",
+];
+let statusDetailVersion = 0;
+let statusEmployees = [];
+function prepareStatusField() {
+  const edit = state.editing;
+  const select = $("statutEquipement");
+  $("champStatut").hidden = !edit;
+  select.replaceChildren();
+  select.disabled = !edit || !["Administrateur","Employé"].includes(state.user?.role);
+  if (edit) {
+    const transitions = statusTransitions(edit);
+    const statuses = state.user?.role === "Administrateur" ? equipmentStatuses : [...new Set([edit.etat,"Disponible","En réparation","Perdu / Volé","À remplacer / Hors service"])];
+    for (const status of statuses) {
+      const supported = status === edit.etat || transitions.some((t) => t.status === status);
+      const option = node("option", "", (supported || state.user?.role === "Employé") ? (state.user?.role === "Employé" && ["Perdu / Volé","À remplacer / Hors service"].includes(status) && status !== edit.etat ? "Signaler " + status : status) : status + " (indisponible)");
+      option.value = status;
+      option.disabled = state.user?.role === "Employé" ? false : !supported;
+      if (!supported) option.title = "Transition non prise en charge par les routes métier pour cet équipement et ce rôle.";
+      select.append(option);
+    }
+    select.value = edit.etat;
+  }
+  updateStatusDetail();
+}
+async function updateStatusDetail() {
+  const version = ++statusDetailVersion;
+  const edit = state.editing;
+  const user = state.user;
+  const label = $("champDetailStatut");
+  label.replaceChildren();
+  label.hidden = true;
+  statusEmployees = [];
+  const transition = edit && statusTransitions(edit).find((t) => t.status === $("statutEquipement").value);
+  if (!transition?.field) return;
+  label.hidden = false;
+  label.append(document.createTextNode(transition.label));
+  const input = node(transition.field === "utilisateur_id" ? "select" : "input");
+  input.id = "detailStatut";
+  input.required = transition.field === "utilisateur_id" || !!transition.required;
+  label.append(input);
+  if (transition.field !== "utilisateur_id") return;
+  const placeholder = node("option", "", "Chargement des employés…");
+  placeholder.value = "";
+  input.append(placeholder);
+  try {
+    const users = await api("/api/utilisateurs");
+    if (version !== statusDetailVersion || state.editing !== edit || state.user !== user) return;
+    if (!Array.isArray(users)) throw new Error("Le format des utilisateurs est incorrect.");
+    statusEmployees = users.filter((u) => u.role === "Employé" &&
+      (u.actif === true || u.actif === 1) && Number.isInteger(Number(u.id)) && Number(u.id) > 0);
+    placeholder.textContent = statusEmployees.length ? "Sélectionner un employé…" : "Aucun employé actif disponible.";
+    for (const employee of statusEmployees) {
+      const option = node("option", "", `${employee.nom} (${employee.email})`);
+      option.value = employee.id;
+      input.append(option);
+    }
+  } catch (error) {
+    if (version !== statusDetailVersion) return;
+    placeholder.textContent = "Employés indisponibles";
+    $("messageEquipement").textContent = error.message;
+  }
+}
+$("statutEquipement").addEventListener("change", () => {
+  if (state.user?.role !== "Employé" || !state.editing) { updateStatusDetail(); return; }
+  const requested = $("statutEquipement").value;
+  const equipment = state.editing;
+  // Le choix déclenche exactement la même fenêtre que la colonne Actions.
+  // Le statut affiché reste celui enregistré tant que l'action n'est pas confirmée.
+  $("statutEquipement").value = equipment.etat;
+  updateStatusDetail();
+  $("messageEquipement").textContent = "";
+  if (requested !== equipment.etat) executerActionStatut(equipment, requested);
+});
+function synchroniserStatutEdition(message = "") {
+  if (!state.editing || state.page !== "ajouter") return;
+  const equipment = state.equipments?.find((e) => e.id === state.editing.id);
+  if (equipment) {
+    state.editing = equipment;
+    prepareStatusField();
+  }
+  $("messageEquipement").textContent = message;
+}
+function selectedStatusChange(edit) {
+  if (!edit || $("statutEquipement").value === edit.etat) return null;
+  const transition = statusTransitions(edit).find((t) => t.status === $("statutEquipement").value);
+  if (!transition) throw new Error("Cette transition n’est pas prise en charge pour cet équipement et ce rôle. Le statut n’a pas été enregistré.");
+  const body = transition.adminStatus ? {etat:transition.status} : {};
+  if (transition.field) {
+    const value = $("detailStatut").value.trim();
+    if (transition.required && !value) throw new Error(transition.label);
+    if (transition.field === "utilisateur_id") {
+      const id = Number(value);
+      if (!Number.isInteger(id) || id <= 0 || !statusEmployees.some((u) => Number(u.id) === id))
+        throw new Error("Sélectionnez un employé actif.");
+      body.utilisateur_id = id;
+    } else {
+      body[transition.field] = value;
+    }
+  }
+  return { ...transition, body };
+}
 function prepareEquipmentForm() {
   const form = $("formEquipement");
   form.reset();
+  prepareStatusField();
   $("messageEquipement").textContent = "";
   $("titreFormulaire").textContent = state.editing
     ? "Modifier un équipement"
     : "Ajouter un équipement";
-  $("infoAjout").textContent =
-    state.user.role === "Administrateur"
+  $("infoAjout").textContent = state.editing
+    ? (state.user.role === "Administrateur"
+      ? "Tous les statuts sont accessibles à l’administrateur. Une attribution exige un employé actif."
+      : "Disponible et réparation : changements directs autorisés. Perte/vol et hors service : signalements soumis à approbation.")
+    : state.user.role === "Administrateur"
       ? "Les nouveaux équipements seront disponibles."
       : "Les nouveaux équipements seront en attente de validation par un administrateur.";
   for (const [field, label] of [
@@ -638,20 +1080,35 @@ $("formEquipement").addEventListener("submit", async (event) => {
   ])
     data[key] = Number(data[key]);
   const edit = state.editing;
+  let detailsSaved = false;
   try {
+    const statusChange = selectedStatusChange(edit);
+    if (statusChange && !window.confirm(statusChange.status === "Disponible" ? "Je confirme vouloir changer le statut de cet équipement à « Disponible »." : statusChange.signalement ? "Soumettre ce signalement à l’administrateur ? Le statut reste inchangé." : `Confirmer le passage de « ${edit.etat} » à « ${statusChange.status} » ?`)) return;
+    if (statusChange?.returnRequired) statusChange.body.confirmer_retour = true;
+    if (statusChange?.reactivationRequired) statusChange.body.confirmer_remise_service = true;
     const result = await api(
       edit
         ? `/api/equipements/${encodeURIComponent(edit.id)}`
         : "/api/equipements",
       jsonRequest(edit ? "PUT" : "POST", data),
     );
+    detailsSaved = true;
+    if (statusChange) {
+      const statusResult = await api(
+        statusChange.signalement ? "/api/signalements" : `/api/equipements/${encodeURIComponent(edit.id)}/${statusChange.route}`,
+        statusChange.signalement ? jsonRequest("POST", {equipement_id:Number(edit.id),type_signalement:statusChange.status,description:statusChange.body.description}) : jsonRequest("PUT", statusChange.body),
+      );
+      result.message = statusResult.message;
+    }
     state.editing = null;
     await chargerInventaire();
+    await chargerSignalements();
     if (!state.user) return;
     location.hash = "inventaire";
-    $("messageInventaire").textContent = result.message;
+    if (state.equipments) $("messageInventaire").textContent = result.message;
   } catch (error) {
-    $("messageEquipement").textContent = error.message;
+    if (detailsSaved && state.user) await chargerInventaire();
+    $("messageEquipement").textContent = (detailsSaved ? "Les informations ont été enregistrées, mais le statut n’a pas pu être changé : " : "") + error.message;
   } finally {
     button.disabled = false;
   }
@@ -704,4 +1161,190 @@ $("formUtilisateur").addEventListener("submit", async (event) => {
     button.disabled = false;
   }
 });
+
+function validationsLues() {
+  try {return Number(localStorage.getItem("techstock-validations-lues-" + state.user?.id)) || 0;} catch {return 0;}
+}
+function marquerValidationsLues() {
+  if (state.user?.role !== "Employé") return;
+  const id=Math.max(validationsLues(),...state.validationsEquipements.map((v)=>v.decision_id || 0));
+  try {localStorage.setItem("techstock-validations-lues-"+state.user.id,String(id));} catch {}
+  actualiserBadgeSignalements();
+}
+function notificationsReparationLues() {
+  try { return Number(localStorage.getItem("techstock-reparations-lues-" + state.user?.id)) || 0; } catch { return 0; }
+}
+function marquerNotificationsReparationLues() {
+  if (state.user?.role !== "Administrateur") return;
+  const id = Math.max(notificationsReparationLues(), ...state.notificationsReparation.map((n) => n.id));
+  try { localStorage.setItem("techstock-reparations-lues-" + state.user.id, String(id)); } catch {}
+  actualiserBadgeSignalements();
+}
+function actualiserBadgeSignalements(inventoryCount) {
+  const equipments = state.equipments || [];
+  const alerts = inventoryCount ?? equipments.filter(isLow).length + equipments.filter((e) =>
+    ["En réparation", "À remplacer / Hors service"].includes(e.etat)).length;
+  const pending = state.user?.role === "Administrateur"
+    ? [...state.signalements,...state.validationsEquipements].filter((s) => s.statut === "En attente").length : 0;
+  const unread = state.user?.role === "Administrateur" ? state.notificationsReparation.filter((n) => n.id > notificationsReparationLues()).length : 0;
+  const decisions = state.user?.role === "Employé" ? state.validationsEquipements.filter((v) => v.statut !== "En attente" && v.decision_id > validationsLues()).length : 0;
+  $("badgeAlertes").textContent = alerts + pending + unread + decisions;
+  $("badgeAlertes").hidden = alerts + pending + unread + decisions === 0;
+  $("notifications").title = pending + " signalement(s) en attente · " + alerts + " alerte(s) d’inventaire · " + unread + " notification(s) informative(s) · " + decisions + " décision(s) de validation";
+}
+let chargementSignalements = false;
+async function chargerSignalements() {
+  if (!state.user || chargementSignalements) return;
+  const user = state.user;
+  chargementSignalements = true;
+  try {
+    const [rows, informations, validations] = await Promise.all([
+      api("/api/signalements"), user.role === "Administrateur" ? api("/api/notifications/reparations") : Promise.resolve([]),
+      api("/api/validations-equipements"),
+    ]);
+    if (state.user !== user) return;
+    if (!Array.isArray(rows)) throw new Error("Le format des signalements est incorrect.");
+    if (!Array.isArray(informations)) throw new Error("Le format des notifications est incorrect.");
+    if (!Array.isArray(validations)) throw new Error("Le format des validations est incorrect.");
+    state.validationsEquipements = validations.map((v) => ({...v,validationEquipement:true}));
+    state.signalements = rows;
+    state.notificationsReparation = informations;
+    $("messageSignalements").textContent = "";
+    afficherSignalements();
+    actualiserBadgeSignalements();
+    if (state.page === "inventaire") renderTables();
+  } catch (error) {
+    if (state.user === user) $("messageSignalements").textContent = error.message;
+  } finally { chargementSignalements = false; }
+}
+function afficherSignalements() {
+  const container = $("listeSignalements");
+  container.replaceChildren();
+  const pending = state.signalements.filter((s) => s.statut === "En attente").length;
+  $("nombreSignalements").textContent = pending ? "· " + pending + " en attente" : "";
+  if (state.user?.role === "Administrateur" && state.notificationsReparation.length) {
+    container.append(node("h3", "", "Informations — sans approbation"));
+    for (const info of state.notificationsReparation) {
+      const article = node("article", "report-item");
+      article.append(node("h3", "", info.equipement_nom), node("p", "", info.employe_nom + " · " + new Date(info.date_mouvement).toLocaleString("fr-CA")),
+        node("p", "report-description", info.note), node("p", "", (info.type_mouvement || "Mise en réparation") + " — aucune approbation requise."));
+      container.append(article);
+    }
+    container.append(node("h3", "", "Demandes d’approbation"));
+  }
+  if (!state.signalements.length && !state.validationsEquipements.length) container.append(node("p", "empty", "Aucun signalement."));
+  for (const report of [...state.validationsEquipements,...state.signalements]) {
+    const article = node("article", "report-item");
+    article.append(node("h3", "", report.equipement_nom));
+    const date = new Date(report.date_signalement);
+    article.append(node("p", "", report.employe_nom + " · " + report.type_signalement));
+    article.append(node("p", "", "Signalé le " + date.toLocaleString("fr-CA") + " · " + report.statut));
+    article.append(node("p", "report-description", report.description));
+    if (report.statut !== "En attente") {
+      article.append(node("p", "", "Décision : " + report.statut +
+        (report.administrateur_nom ? " · " + report.administrateur_nom : "")));
+      if (report.commentaire) article.append(node("p", "report-description", report.commentaire));
+    }
+    if (state.user?.role === "Administrateur" && report.statut === "En attente") {
+      const buttons = node("div", "form-actions");
+      for (const [label, decision] of [["Accepter", "Acceptée"], ["Refuser", "Refusée"]]) {
+        const button = node("button", "action-button", label);
+        button.type = "button";
+        button.addEventListener("click", () => report.validationEquipement ? ouvrirDecisionValidation(report, decision) : ouvrirDecisionSignalement(report, decision));
+        buttons.append(button);
+      }
+      article.append(buttons);
+    }
+    container.append(article);
+  }
+}
+function fenetreSignalement(titleText, labelText, required, confirmText, save) {
+  const user = state.user;
+  const dialog = node("dialog", "assignment-dialog");
+  const title = node("h2", "", titleText);
+  title.id = "titreSignalement";
+  dialog.setAttribute("aria-labelledby", title.id);
+  const form = node("form");
+  const label = node("label", "", labelText);
+  const input = node("textarea");
+  input.rows = 3;
+  input.maxLength = 500;
+  input.required = required;
+  label.append(input);
+  const message = node("p");
+  message.setAttribute("role", "status");
+  const buttons = node("div", "form-actions");
+  const confirm = node("button", "action-button", confirmText);
+  confirm.type = "submit";
+  confirm.disabled = required;
+  const cancel = node("button", "action-button", "Annuler");
+  cancel.type = "button";
+  let sending = false;
+  input.addEventListener("input", () => { confirm.disabled = sending || (required && !input.value.trim()); });
+  cancel.addEventListener("click", () => dialog.close());
+  dialog.addEventListener("cancel", (event) => { if (sending) event.preventDefault(); });
+  dialog.addEventListener("close", () => dialog.remove(), { once: true });
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (sending) return;
+    if (state.user !== user) { dialog.close(); return; }
+    const value = input.value.trim();
+    if (required && !value) { message.textContent = labelText; return; }
+    sending = true;
+    confirm.disabled = cancel.disabled = input.disabled = true;
+    message.textContent = "Enregistrement…";
+    try {
+      const result = await save(value);
+      dialog.close();
+      await chargerInventaire();
+      await chargerSignalements();
+      if (state.user === user) {
+        $("messageSignalements").textContent = result.message;
+        synchroniserStatutEdition(result.message);
+      }
+    } catch (error) {
+      if (state.user !== user) dialog.close();
+      else message.textContent = error.message;
+    } finally {
+      sending = false;
+      cancel.disabled = input.disabled = false;
+      confirm.disabled = required && !input.value.trim();
+    }
+  });
+  buttons.append(confirm, cancel);
+  form.append(label, message, buttons);
+  dialog.append(title, form);
+  document.body.append(dialog);
+  dialog.showModal();
+}
+function ouvrirSignalement(e, type) {
+  if (state.user?.role !== "Employé") return;
+  const allowed = type === "En réparation" ? ["Disponible", "Attribué"]
+    : ["Disponible", "Attribué", "En réparation", "En attente de retour"];
+  if (!allowed.includes(e.etat)) {
+    $(state.page === "ajouter" ? "messageEquipement" : "messageInventaire").textContent = "Cet équipement ne peut pas être signalé dans son état actuel. Aucun changement enregistré.";
+    return;
+  }
+  fenetreSignalement("Signaler : " + type + " · " + e.nom, "Description du problème (obligatoire)", true, "Soumettre",
+    (description) => api("/api/signalements", jsonRequest("POST", {
+      equipement_id: Number(e.id), type_signalement: type, description,
+    })));
+}
+function ouvrirDecisionValidation(e, decision) {
+  if (state.user?.role !== "Administrateur") return;
+  fenetreSignalement((decision === "Acceptée" ? "Valider" : "Refuser") + " · " + (e.equipement_nom || e.nom),
+    decision === "Refusée" ? "Motif du refus (obligatoire)" : "Commentaire (facultatif)",
+    decision === "Refusée", "Confirmer",
+    (commentaire) => api(`/api/equipements/${e.equipement_id || e.id}/validation${decision === "Refusée" ? "/refus" : ""}`,jsonRequest("PUT",{commentaire})));
+}
+function ouvrirDecisionSignalement(report, decision) {
+  if (state.user?.role !== "Administrateur") return;
+  fenetreSignalement((decision === "Acceptée" ? "Accepter" : "Refuser") + " · " + report.equipement_nom,
+    decision === "Refusée" ? "Motif du refus (obligatoire)" : "Commentaire (facultatif)",
+    decision === "Refusée", "Confirmer",
+    (commentaire) => api(`/api/signalements/${report.id}/decision`, jsonRequest("PUT", {decision, commentaire})));
+}
+// Les sessions expirées restent gérées par api(); la cloche se met à jour sans rechargement manuel.
+window.setInterval(() => { if (state.user) chargerSignalements(); }, 20000);
+
 verifierSession();

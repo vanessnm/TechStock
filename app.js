@@ -184,6 +184,15 @@ app.get('/api/equipements', verifierConnexion, async (req, res) => {
 // AJOUTER UN ÉQUIPEMENT
 app.post('/api/equipements', verifierConnexion, async (req, res) => {
     try {
+        if (!['Administrateur', 'Employé'].includes(req.session.utilisateur.role)) {
+            return res.status(403).json({ erreur: 'Création non autorisée' });
+        }
+        // Le statut initial et les données de gestion sont toujours fixés par le serveur.
+        if (req.session.utilisateur.role === 'Employé' &&
+            ['etat','statut','attribue_a_id','utilisateur_id','date_attribution','valide_par_id','date_validation','ajoute_par_id'].some((key) => Object.prototype.hasOwnProperty.call(req.body, key))) {
+            return res.status(403).json({ erreur: 'La création ne permet pas de choisir un statut, une attribution ou une validation.' });
+        }
+
         const {
             nom,
             description,
@@ -254,72 +263,7 @@ app.post('/api/equipements', verifierConnexion, async (req, res) => {
     }
 });
 
-// VALIDER UN ÉQUIPEMENT AJOUTÉ PAR UN EMPLOYÉ
-
-app.put(
-    '/api/equipements/:id/validation',
-    verifierConnexion,
-    verifierAdmin,
-    async (req, res) => {
-        try {
-            const { id } = req.params;
-
-            const pool = await connecterBD();
-
-            const resultat = await pool.request()
-                .input('id', id)
-                .input('valide_par_id', req.session.utilisateur.id)
-                .query(`
-                    UPDATE Equipements
-                    SET
-                        etat = 'Disponible',
-                        valide_par_id = @valide_par_id,
-                        date_validation = GETDATE()
-                    WHERE id = @id
-                      AND etat = 'En attente de validation'
-                `);
-
-            if (resultat.rowsAffected[0] === 0) {
-                return res.status(404).json({
-                    erreur: 'Équipement en attente de validation introuvable'
-                });
-            }
-
-            await pool.request()
-                .input('equipement_id', id)
-                .input('utilisateur_id', req.session.utilisateur.id)
-                .input('type_mouvement', 'Validation')
-                .input('note', 'Équipement validé par un administrateur')
-                .query(`
-                    INSERT INTO Mouvements
-                    (
-                        equipement_id,
-                        utilisateur_id,
-                        type_mouvement,
-                        note
-                    )
-                    VALUES
-                    (
-                        @equipement_id,
-                        @utilisateur_id,
-                        @type_mouvement,
-                        @note
-                    )
-                `);
-
-            res.json({
-                message: 'Équipement validé avec succès'
-            });
-
-        } catch (erreur) {
-            console.error(erreur);
-
-            res.status(500).json({
-                erreur: 'Impossible de valider l’équipement'
-            });
-        }
-    }
-);
+// Validation des ajouts : src/validations-equipements.js
 
 // ATTRIBUER UN ÉQUIPEMENT À UN EMPLOYÉ
 app.put(
@@ -493,6 +437,10 @@ app.put(
     async (req, res) => {
         try {
             const { id } = req.params;
+            const commentaire = req.body.commentaire ?? '';
+            if (typeof commentaire !== 'string') {
+                return res.status(400).json({ erreur: 'Le commentaire doit être un texte' });
+            }
 
             const pool = await connecterBD();
 
@@ -520,7 +468,7 @@ app.put(
                 .input('equipement_id', id)
                 .input('utilisateur_id', req.session.utilisateur.id)
                 .input('type_mouvement', 'Retour confirmé')
-                .input('note', 'Retour de l’équipement confirmé par un administrateur')
+                .input('note', commentaire.trim())
                 .query(`
                     INSERT INTO Mouvements
                     (
@@ -552,154 +500,7 @@ app.put(
     }
 );
 
-// METTRE UN ÉQUIPEMENT EN RÉPARATION
-
-app.put(
-    '/api/equipements/:id/reparation',
-    verifierConnexion,
-    async (req, res) => {
-        try {
-            const { id } = req.params;
-            const { raison } = req.body;
-
-            // La raison du problème est obligatoire
-            if (!raison || raison.trim() === '') {
-                return res.status(400).json({
-                    erreur: 'La raison de la réparation est obligatoire'
-                });
-            }
-
-            const pool = await connecterBD();
-
-            const resultat = await pool.request()
-                .input('id', id)
-                .query(`
-                    UPDATE Equipements
-                    SET etat = 'En réparation'
-                    WHERE id = @id
-                      AND etat NOT IN (
-                          'En attente de validation',
-                          'En attente de retour',
-                          'À remplacer / Hors service',
-                          'Perdu / Volé'
-                      )
-                `);
-
-            if (resultat.rowsAffected[0] === 0) {
-                return res.status(404).json({
-                    erreur: 'Équipement pouvant être mis en réparation introuvable'
-                });
-            }
-
-            // Enregistre la mise en réparation dans l'historique
-            await pool.request()
-                .input('equipement_id', id)
-                .input('utilisateur_id', req.session.utilisateur.id)
-                .input('type_mouvement', 'Mise en réparation')
-                .input('note', raison.trim())
-                .query(`
-                    INSERT INTO Mouvements
-                    (
-                        equipement_id,
-                        utilisateur_id,
-                        type_mouvement,
-                        note
-                    )
-                    VALUES
-                    (
-                        @equipement_id,
-                        @utilisateur_id,
-                        @type_mouvement,
-                        @note
-                    )
-                `);
-
-            res.json({
-                message: 'Équipement mis en réparation avec succès'
-            });
-
-        } catch (erreur) {
-            console.error(erreur);
-
-            res.status(500).json({
-                erreur: 'Impossible de mettre l’équipement en réparation'
-            });
-        }
-    }
-);
-
-// TERMINER LA RÉPARATION D'UN ÉQUIPEMENT
-
-app.put(
-    '/api/equipements/:id/reparation/fin',
-    verifierConnexion,
-    async (req, res) => {
-        try {
-            const { id } = req.params;
-            const { resolution } = req.body;
-
-            // La note de résolution est obligatoire
-            if (!resolution || resolution.trim() === '') {
-                return res.status(400).json({
-                    erreur: 'La note de résolution est obligatoire'
-                });
-            }
-
-            const pool = await connecterBD();
-
-            // Seul un équipement actuellement en réparation
-            // peut redevenir disponible
-            const resultat = await pool.request()
-                .input('id', id)
-                .query(`
-                    UPDATE Equipements
-                    SET etat = 'Disponible'
-                    WHERE id = @id
-                      AND etat = 'En réparation'
-                `);
-
-            if (resultat.rowsAffected[0] === 0) {
-                return res.status(404).json({
-                    erreur: 'Équipement en réparation introuvable'
-                });
-            }
-
-            // Enregistre la fin de la réparation dans l'historique
-            await pool.request()
-                .input('equipement_id', id)
-                .input('utilisateur_id', req.session.utilisateur.id)
-                .input('type_mouvement', 'Fin de réparation')
-                .input('note', resolution.trim())
-                .query(`
-                    INSERT INTO Mouvements
-                    (
-                        equipement_id,
-                        utilisateur_id,
-                        type_mouvement,
-                        note
-                    )
-                    VALUES
-                    (
-                        @equipement_id,
-                        @utilisateur_id,
-                        @type_mouvement,
-                        @note
-                    )
-                `);
-
-            res.json({
-                message: 'Réparation terminée avec succès'
-            });
-
-        } catch (erreur) {
-            console.error(erreur);
-
-            res.status(500).json({
-                erreur: 'Impossible de terminer la réparation'
-            });
-        }
-    }
-);
+// Les routes de réparation sont enregistrées dans src/reparations.js.
 
 // METTRE UN ÉQUIPEMENT HORS SERVICE / À REMPLACER
 
@@ -710,10 +511,11 @@ app.put(
     async (req, res) => {
         try {
             const { id } = req.params;
-            const { raison } = req.body;
+            const raison = req.body.raison ?? '';
 
-            // La raison est obligatoire
-            if (!raison || raison.trim() === '') {
+            // Le commentaire est facultatif pour un administrateur.
+            if (typeof raison !== 'string' ||
+                (req.session.utilisateur.role !== 'Administrateur' && raison.trim() === '')) {
                 return res.status(400).json({
                     erreur: 'La raison est obligatoire'
                 });
@@ -792,10 +594,11 @@ app.put(
     async (req, res) => {
         try {
             const { id } = req.params;
-            const { note } = req.body;
+            const note = req.body.note ?? '';
 
-            // Une note est obligatoire
-            if (!note || note.trim() === '') {
+            // Le commentaire est facultatif pour un administrateur.
+            if (typeof note !== 'string' ||
+                (req.session.utilisateur.role !== 'Administrateur' && note.trim() === '')) {
                 return res.status(400).json({
                     erreur: 'Une note est obligatoire'
                 });
@@ -866,6 +669,15 @@ app.put(
 
 app.put('/api/equipements/:id', verifierConnexion, async (req, res) => {
     try {
+        if (!['Administrateur', 'Employé'].includes(req.session.utilisateur.role)) {
+            return res.status(403).json({ erreur: 'Modification non autorisée' });
+        }
+        // La route de modification générale ne permet jamais d'appliquer un statut.
+        if (req.session.utilisateur.role === 'Employé' &&
+            ['etat','statut','attribue_a_id','utilisateur_id','date_attribution','valide_par_id','date_validation','ajoute_par_id'].some((key) => Object.prototype.hasOwnProperty.call(req.body, key))) {
+            return res.status(403).json({ erreur: 'Un employé doit soumettre une demande pour changer le statut.' });
+        }
+
         const { id } = req.params;
 
         const {
@@ -1025,6 +837,11 @@ app.get(
 // ========================================
 // SERVEUR
 // ========================================
+
+require('./src/validations-equipements')(app, connecterBD, verifierConnexion, verifierAdmin);
+require('./src/statuts-admin')(app, connecterBD, verifierConnexion, verifierAdmin);
+require('./src/reparations')(app, connecterBD, verifierConnexion, verifierAdmin);
+require('./src/signalements')(app, connecterBD, verifierConnexion, verifierAdmin);
 
 app.listen(3000, () => {
     console.log('Serveur TechStock démarré sur http://localhost:3000');
